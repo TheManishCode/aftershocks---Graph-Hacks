@@ -362,6 +362,9 @@ class CypherBody(BaseModel):
 
 class AskBody(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
+    #: provider-qualified model id, e.g. "openrouter:anthropic/claude-sonnet-5". Unset = the server's default.
+    model: str | None = Field(None, max_length=200)
+    effort: Literal["low", "medium", "high"] = "medium"
 
 
 @app.post(f"{v1}/repos/{{repo}}/impact", dependencies=auth)
@@ -518,6 +521,76 @@ async def libraries_list(repo: str):
     return await call(T.test_libraries, repo)
 
 
+class LibraryBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=40)
+    path: str = Field(..., min_length=1, max_length=1024)
+
+
+@app.post(f"{v1}/repos/{{repo}}/libraries", dependencies=auth)
+async def library_add(repo: str, body: LibraryBody):
+    """Register an external pytest directory with the repo, so its tests are indexed, selected and run alongside.
+
+    The path goes through the same `allowed_path` guard as indexing, so it cannot escape AFTERSHOCK_REPO_ROOTS.
+    This records the directory; the repo must be re-indexed before its tests appear in the graph.
+    """
+    return await call(T.library_set, repo, body.name, body.path)
+
+
+@app.delete(f"{v1}/repos/{{repo}}/libraries/{{name}}", dependencies=auth)
+async def library_remove(repo: str, name: str):
+    return await call(T.library_set, repo, name, None)
+
+
+# ---- model providers (D27) ---------------------------------------------------------------------------------------
+
+
+class ProviderKeyBody(BaseModel):
+    key: str = Field(..., min_length=8, max_length=400)
+
+
+@app.get(f"{v1}/providers", dependencies=auth)
+async def providers_list():
+    """Every provider, whether it has a key, and the last four characters of it. Never the key itself."""
+    from . import providers
+
+    return {"providers": providers.status(), "default": providers.default_model()}
+
+
+@app.put(f"{v1}/providers/{{provider_id}}", dependencies=auth)
+async def provider_set(provider_id: str, body: ProviderKeyBody, request: Request):
+    """Store a provider key on the server, owner-only on disk.
+
+    Writing a credential is an operator action, so it is held to the same bar as running tests: the request must
+    come from the machine the API runs on. A shared deployment sets keys through the environment instead.
+    """
+    from . import providers
+
+    if provider_id not in providers.BY_ID:
+        raise HTTPException(404, "unknown provider")
+    peer = request.client.host if request.client else ""
+    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
+        raise HTTPException(403, "keys can only be set from the machine the API runs on; use the environment "
+                                 "variable on a shared deployment")
+    try:
+        providers.set_key(provider_id, body.key)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"ok": True, "provider": provider_id}
+
+
+@app.delete(f"{v1}/providers/{{provider_id}}", dependencies=auth)
+async def provider_clear(provider_id: str, request: Request):
+    from . import providers
+
+    if provider_id not in providers.BY_ID:
+        raise HTTPException(404, "unknown provider")
+    peer = request.client.host if request.client else ""
+    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
+        raise HTTPException(403, "keys can only be cleared from the machine the API runs on")
+    providers.clear_key(provider_id)
+    return {"ok": True, "provider": provider_id}
+
+
 @app.post(f"{v1}/repos/{{repo}}/path", dependencies=auth)
 async def path(repo: str, body: PathBody):
     return await call(T.explain_path, repo, body.source, body.target, body.depth)
@@ -543,7 +616,7 @@ async def ask(repo: str, body: AskBody):
     from . import agent
 
     T._graph(repo)
-    return await run_in_threadpool(agent.ask, repo, body.question)
+    return await run_in_threadpool(agent.ask, repo, body.question, None, model=body.model, effort=body.effort)
 
 
 @app.post(f"{v1}/repos/{{repo}}/ask/stream", dependencies=auth)
@@ -560,7 +633,7 @@ async def ask_stream(repo: str, body: AskBody, request: Request):
 
     async def runner():
         try:
-            await run_in_threadpool(agent.ask, repo, body.question, emit)
+            await run_in_threadpool(agent.ask, repo, body.question, emit, model=body.model, effort=body.effort)
         except Exception:
             log.exception("ask failed")
             emit("error", {"detail": "the agent failed; see server log"})

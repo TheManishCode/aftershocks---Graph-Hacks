@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -28,8 +29,28 @@ MAX_MESSAGE = 1500
 _ORDER = {"failed": 0, "passed": 1, "skipped": 2}
 
 
+_id_lock = threading.Lock()
+_last_us = 0
+
+
 def new_id() -> str:
-    return f"{int(time.time() * 1000):x}{secrets.token_hex(2)}"
+    """A run id that sorts chronologically as a string.
+
+    `started` is only second-resolution, so it ties constantly and the id is the real tiebreak in `runs` and
+    `run_prune` (both `ORDER BY r.started DESC, r.id DESC`). If two ids can share a timestamp, ordering falls
+    through to the random suffix and `run_prune` deletes an arbitrary run instead of the oldest.
+
+    So the clock is read in microseconds and forced strictly upward: a second call inside the same microsecond
+    borrows the next one rather than tying. The counter also absorbs a clock that steps backwards (NTP), which a
+    bare timestamp would turn into ids that sort before runs already recorded. Width is a stable 13 hex chars
+    until 2109, so lexical order is chronological order. The random suffix remains, to keep ids unguessable
+    across processes, which the monotonic counter does not cover.
+    """
+    global _last_us
+    with _id_lock:
+        us = max(time.time_ns() // 1000, _last_us + 1)
+        _last_us = us
+    return f"{us:x}{secrets.token_hex(2)}"
 
 
 def _commit(root: Path | None) -> str:

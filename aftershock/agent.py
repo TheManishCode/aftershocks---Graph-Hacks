@@ -77,17 +77,19 @@ def call_tool(repo: str, name: str, args: dict) -> dict:
 # ---- Claude mode -----------------------------------------------------------------------------------------------------
 
 
-def _ask_claude(repo: str, question: str, emit: Emit) -> dict:
+def _ask_claude(repo: str, question: str, emit: Emit, *, api_key: str | None = None, model: str | None = None,
+                effort: str = "medium") -> dict:
     import anthropic
 
     s = get_settings()
-    client = anthropic.Anthropic(api_key=s.anthropic_api_key)
+    client = anthropic.Anthropic(api_key=api_key or s.anthropic_api_key)
+    model = model or s.model
     messages: list[dict] = [{"role": "user", "content": f"Repository: {repo}\n\nQuestion: {question}"}]
     steps, usage = [], {"input": 0, "output": 0, "cache_read": 0}
     for _ in range(MAX_TURNS):
         resp = client.beta.messages.create(
-            model=s.model, max_tokens=16000, system=SYSTEM, tools=tool_specs(), messages=messages,
-            cache_control={"type": "ephemeral"}, output_config={"effort": "medium"},
+            model=model, max_tokens=16000, system=SYSTEM, tools=tool_specs(), messages=messages,
+            cache_control={"type": "ephemeral"}, output_config={"effort": effort},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",
         )
         usage["input"] += resp.usage.input_tokens
@@ -362,17 +364,47 @@ def _render_symbol(out: dict) -> str:
 # ---- entry -----------------------------------------------------------------------------------------------------------
 
 
-def ask(repo: str, question: str, emit: Emit | None = None) -> dict:
-    emit = emit or (lambda kind, data: None)
-    if get_settings().anthropic_api_key:
-        emit("plan", {"mode": "claude", "model": get_settings().model})
-        try:
-            import anthropic
+def ask(repo: str, question: str, emit: Emit | None = None, *, model: str | None = None,
+        effort: str = "medium") -> dict:
+    """Answer `question` about `repo`.
 
-            return _ask_claude(repo, question, emit)
-        except (ImportError, anthropic.APIError) as e:  # outage or bad key: degrade to the router, don't fail
-            log.warning("claude mode failed, falling back to router: %s", e)
-            emit("plan", {"mode": "router", "reason": "model unavailable"})
-    else:
-        emit("plan", {"mode": "router"})
+    `model` is a provider-qualified id (`"openrouter:anthropic/claude-sonnet-5"`); when it names a provider with
+    no key, or is omitted, the server's own default is used. Any model failure degrades to the deterministic
+    router rather than failing the request — an answer from one tool beats an error page.
+    """
+    from . import providers
+
+    emit = emit or (lambda kind, data: None)
+    picked = providers.resolve(model) or providers.resolve(providers.default_model())
+    if picked is None:
+        emit("plan", {"mode": "router", "reason": "no model configured"})
+        return _ask_router(repo, question, emit)
+
+    provider, name = picked
+    full = f"{provider.id}:{name}"
+    emit("plan", {"mode": "claude", "model": name, "provider": provider.id, "provider_label": provider.label,
+                  "model_id": full, "effort": effort})
+    try:
+        key = providers.key_for(provider.id)
+        if provider.wire == "anthropic":
+            return _ask_claude(repo, question, emit, api_key=key, model=name, effort=effort)
+        from . import agent_openai
+
+        return agent_openai.ask(repo, question, emit, provider=provider, key=key, model=name, system=SYSTEM,
+                                specs=tool_specs(), call_tool=call_tool, summarise=_summary, effort=effort,
+                                max_turns=MAX_TURNS)
+    except Exception as e:  # noqa: BLE001 -- outage, bad key, unknown model: degrade to the router, don't fail
+        log.warning("model mode failed (%s), falling back to router: %s", full, e)
+        emit("plan", {"mode": "router", "reason": _why(e)})
     return _ask_router(repo, question, emit)
+
+
+def _why(e: Exception) -> str:
+    """A short, safe reason for the fallback banner. Never carries a key or a stack trace."""
+    from .agent_openai import ProviderError
+
+    if isinstance(e, ImportError):
+        return "the provider's client library is not installed"
+    if isinstance(e, ProviderError):
+        return str(e)[:200]
+    return f"model unavailable ({type(e).__name__})"

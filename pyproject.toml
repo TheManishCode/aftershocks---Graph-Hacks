@@ -15,6 +15,8 @@ dependencies = [
     "pydantic>=2.14",
     "pydantic-settings>=2.16",
     "mcp>=2.3,<3",
+    # the OpenAI-wire agent (agent_openai.py) talks to every non-Anthropic provider over raw HTTP
+    "httpx>=0.28",
 ]
 
 [project.optional-dependencies]
