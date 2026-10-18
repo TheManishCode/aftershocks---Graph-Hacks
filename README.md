@@ -38,6 +38,7 @@ culprit, Ask, Cypher) is in [`media/aftershock-demo.mp4`](media/aftershock-demo.
 | Which tests actually run this code? (records per-test coverage) | `coverage` | — | — |
 | Run only the affected tests, and explain failures | `run` | — | — |
 | Run the affected tests and let Claude fix what fails | `heal` | `POST /repos/{r}/runs/{id}/heal/stream` (gated) | — |
+| Run built-in checks: hygiene, secrets, config, lint, tests (189 scripts) | `scripts` | `GET /repos/{r}/scripts`, `POST …/scripts/run/stream` | `test_scripts`, `run_checks`, `run_scripts` (gated) |
 | Add an outside pytest directory to the repo's tests | `library` | `GET /repos/{r}/libraries` | `test_libraries` |
 | What ran, what failed, what was suspected, what was retried? | `runs` | `GET /repos/{r}/runs`, `/runs/{id}` | `test_runs`, `run_detail` |
 
@@ -77,6 +78,22 @@ analysis. On click, `wrap_text` goes from 12 statically selected tests to 122, a
 same from the browser: pick the working-tree diff, some symbols, the whole suite, or "record coverage", and watch each
 test's result arrive live, then the ranked culprits. It needs the repo's interpreter (`<repo>/.venv` or a bench env)
 and works only from the machine running the API.
+
+**Script library (D28).** Aftershock ships its test scripts; nobody writes or registers them. Each of the 189
+scripts says what it checks and when it applies (a Dockerfile check only shows up for a repo with a Dockerfile).
+`check` scripts read files, `graph` scripts query the index, and `command` scripts run an installed tool (pytest
+modes, ruff, mypy, eslint, tsc, cargo, shellcheck, gitleaks, …). Pick scripts on the *Tests* page, or ask in plain
+English ("check this repo for leaked secrets and broken config") and the Ask agent picks and runs them.
+
+```bash
+aftershock scripts list myrepo --category security
+aftershock scripts run myrepo                      # every applicable read-only script
+aftershock scripts run myrepo pytest.collect py.ruff
+```
+
+`check` and `graph` scripts run anywhere the API key reaches. `command` scripts execute code, so the API and MCP run
+them only behind `AFTERSHOCK_ALLOW_RUN=1` from loopback, as for tests. The CLI runs as you, like `run`. Only the
+pytest modes are recorded as test runs in the graph; other scripts' results go to the caller.
 
 **The test loop (D25).** Every run is recorded in the graph. When tests fail, *Investigate in Culprit* opens the
 run: each failure with its history, the ranked suspects with the call chain from the failing test to each, and the
@@ -322,6 +339,8 @@ The API also serves streamable HTTP at `/mcp` (same bearer key). All tools are r
   `heal` and `mutate` are absent from the API; all four are absent from MCP. `run` and `coverage` are reachable
   from the web Tests page only when the API is started with `AFTERSHOCK_ALLOW_RUN=1`, and then only from loopback
   clients (D18). Run them only on code you trust, never on a repo cloned from a URL someone else gave you.
+- Library scripts of kind `command` follow the same gate (API, Ask agent, MCP). `check` and `graph` scripts only
+  read; they do not follow symlinks out of the checkout, and `sec.secrets` masks what it finds.
 - Without an API key, the API answers only loopback Hosts and `AFTERSHOCK_ALLOWED_HOSTS` (DNS-rebinding guard).
 
 ## Limits

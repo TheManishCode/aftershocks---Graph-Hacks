@@ -103,6 +103,27 @@ default, loopback Host required, body validation, 409 on a concurrent run, 421 r
 the mini fixture with a failing test and ranked culprits, cancel). The page itself was type-checked but **not opened in
 a browser** in this session (`npm install` not run here, so no `next build`/dev server).
 
+## Built-in script library (D28, 2026-10-19)
+
+Decision: test scripts ship with Aftershock (`aftershock/catalog/`) instead of users registering them. A user picks
+scripts in the UI or CLI, or asks the Ask agent, which picks and runs them.
+
+- **Gating is per kind.** `check` (read files) and `graph` (query the index) run for any API-key holder. `command`
+  runs a tool, so it needs the D18 gate. The API checks the gate *before* validating ids, so a refused caller gets
+  403 for an unknown id too and learns nothing about the catalog.
+- **The agent's `run_scripts` tool exists only when the request passed the gate**; otherwise it has the read-only
+  `test_scripts`/`run_checks`. Its runs share the repo's run slot with the Tests page.
+- **The CLI runs as the user** (like `run`), so command scripts need no gate there.
+- Verified: `tests/test_catalog.py` (registry integrity, seeded findings, symlink confinement, masking, `pick`
+  gating/caps, `expand` caps, API 403/404/422 and a streamed read-only run, agent tool exposure). The Tests page
+  was driven in Chromium via Playwright: quick checks ran and streamed, `pytest.collect` ran from the UI with the gate
+  on, and at 390 px there was no overflow and no console errors.
+- **Follow-ups:**
+  - Only pytest modes are recorded as runs in the graph; other script results are not persisted.
+  - `pytest_run` passes the server's environment to the repo's tests, model API keys included; scrub them.
+  - `media/aftershock-demo.mp4` still shows the old "add library" step. `scripts/demo_video.mjs` is updated but the
+    video was not re-recorded.
+
 ## Recommended next steps
 
 1. **Commit everything and push.** One commit (`841b1ad`) exists; the runtime layer, `heal`, the web test setup and
