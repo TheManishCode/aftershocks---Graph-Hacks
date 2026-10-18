@@ -124,6 +124,26 @@ scripts in the UI or CLI, or asks the Ask agent, which picks and runs them.
   - `media/aftershock-demo.mp4` still shows the old "add library" step. `scripts/demo_video.mjs` is updated but the
     video was not re-recorded.
 
+## Results for visitors, installs, probes (D29, 2026-10-19)
+
+Problem: the public site ran nothing (gate off by design), so no visitor ever saw a test result or a culprit, and the
+server had no test interpreters. Decisions:
+
+- **Showcase repos are the only public execution.** `run_refusal(request, repo)` allows a run when the operator gate
+  passes (ALLOW_RUN + loopback, no `X-Aftershock-Remote`) or `repo` is in `AFTERSHOCK_SHOWCASE_REPOS`. Public runs:
+  one at a time globally (`_public_runs`), timeout capped. `_showcase_lock` blocks index/drop/libraries for
+  non-local callers. Heal, provider key changes and `local_only` scripts use the operator gate only.
+- **The Next proxy** (same host under compose, Vercel otherwise) sets
+  `X-Aftershock-Remote` for every non-local visitor; the API can only lose access from it.
+- **Installs come from `runtime/setup.py` RECIPES only**, never a caller-typed name. npm uses `--ignore-scripts`.
+- **`child_env()`** is the one environment for every child process (tests, coverage, tools, installs).
+- Verified: ruff; `pytest` 200 passed (15 new in `tests/test_d29.py`); web `tsc`, eslint, jest 35 passed. The
+  whole showcase flow (index, demo edit, setup, `run --diff` with 7 failures and `Account.withdraw` ranked first,
+  probes, `--tools ruff`) was run locally on a scratch copy of ledger.
+- **Not done:** `ai.unit-tests` was not run against a real model in this session (its pieces are tested; the model
+  call is not). The UI changes were type-checked and linted but not opened locally, because the other thread owns
+  `web/`'s dev server; they are checked on the deployed site.
+
 ## Recommended next steps
 
 1. **Commit everything and push.** One commit (`841b1ad`) exists; the runtime layer, `heal`, the web test setup and

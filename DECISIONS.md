@@ -316,3 +316,15 @@ The web app proxies `/api/v1/*` server-side and adds the key there.
   started with `AFTERSHOCK_ALLOW_RUN=1` (the client launched it on this machine). They never exist on the HTTP `/mcp`
   endpoint, and the Ask agent drops any tool not marked read-only, so a question can never run or edit code. This
   replaces D25's "MCP never executes code".
+
+## D29. Public test results through showcase repos; installs from fixed recipes; probe scripts
+
+The public deployment keeps `AFTERSHOCK_ALLOW_RUN=0`, so visitors saw no runs and no culprits. Opening the gate for
+everyone would let any visitor run any indexed code. Instead the operator names showcase repos: anyone may run, set
+up and install tools for those, one public run at a time under a short timeout, and only the operator may change what
+they contain (index, delete, libraries). Anything that spends model credit or writes to a checkout (heal,
+`ai.unit-tests`) stays behind the operator gate. The web proxy marks remote visitors with a header that can only
+remove access. Missing tools are installed only from a fixed recipe table, so the gate is the single boundary between
+a visitor and an install. Script batches are recorded like test runs, so results outlive the page. Aftershock adds
+its own probes (import/CLI smoke, flaky, isolation, model-written tests kept only when they pass), since those are
+questions about a suite no third-party linter asks.

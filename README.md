@@ -93,7 +93,20 @@ aftershock scripts run myrepo pytest.collect py.ruff
 
 `check` and `graph` scripts run anywhere the API key reaches. `command` scripts execute code, so the API and MCP run
 them only behind `AFTERSHOCK_ALLOW_RUN=1` from loopback, as for tests. The CLI runs as you, like `run`. Only the
-pytest modes are recorded as test runs in the graph; other scripts' results go to the caller.
+pytest modes are recorded as test runs in the graph; every batch of script results is kept too (the last 20 per
+repo), and the library shows the newest one when the page opens.
+
+**Installs and probes (D29).** A script whose tool is missing offers *Install* (a fixed pip/npm recipe) or *Set up*
+(create the repo's test interpreter and install its test requirements), or shows the command when the tool needs the
+system package manager. `aftershock setup myrepo [--tools ruff mypy]` does the same from a terminal. Five scripts are
+Aftershock's own: `py.import-smoke`, `py.cli-smoke`, `pytest.flaky` (forward, reversed, forward),
+`pytest.isolation` (each test file alone vs. the suite), and `ai.unit-tests` (model-written tests for untested central
+code, kept only if they pass; operator only).
+
+**Showcase repos (D29).** On a public server, `AFTERSHOCK_SHOWCASE_REPOS=ledger,flask` lets any visitor run tests,
+scripts, setup and installs on those repos only: one public run at a time, `AFTERSHOCK_PUBLIC_RUN_TIMEOUT` seconds at
+most, and nobody but the operator may re-index, delete or extend them. `scripts/showcase.sh` provisions them on a
+compose deployment. Heal stays on the operator's machine.
 
 **The test loop (D25).** Every run is recorded in the graph. When tests fail, *Investigate in Culprit* opens the
 run: each failure with its history, the ranked suspects with the call chain from the failing test to each, and the

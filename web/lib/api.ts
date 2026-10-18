@@ -519,7 +519,8 @@ export const api = {
     request<CulpritResult>("POST", `${r(repo)}/culprit`, b),
   cypher: (repo: string, query: string) =>
     request<{ rows: Record<string, unknown>[]; count: number; receipts: Receipts }>("POST", `${r(repo)}/cypher`, { query }),
-  runtime: () => request<{ enabled: boolean; reason: string | null }>("GET", "/runtime"),
+  /** Whether this visitor may run tests on `repo`. `public`: a showcase repo, open to anyone but capped (D29). */
+  runtime: (repo?: string) => request<RuntimeStatus>("GET", `/runtime${q({ repo })}`),
   runs: (repo: string, limit = 20) => request<{ runs: TestRunSummary[] }>("GET", `${r(repo)}/runs${q({ limit })}`),
   runDetail: (repo: string, id: string) => request<RunDetail>("GET", `${r(repo)}/runs/${encodeURIComponent(id)}`),
 
@@ -537,6 +538,11 @@ export const api = {
   /** The catalog for this repo. `can_exec` is the run gate: without it only check/graph scripts run. */
   scripts: (repo: string, p: { q?: string; category?: string; ecosystem?: string; applicable?: boolean } = {}) =>
     request<ScriptListing>("GET", `${r(repo)}/scripts${q({ ...p, applicable: p.applicable ? "true" : undefined })}`),
+
+  /** Recorded script-library batches, newest first, and one with its results (D29). */
+  scriptRuns: (repo: string, limit = 10) => request<{ runs: ScriptRunSummary[] }>("GET", `${r(repo)}/scripts/runs${q({ limit })}`),
+  scriptRun: (repo: string, id: string) =>
+    request<ScriptRunSummary & { results: ScriptResult[] }>("GET", `${r(repo)}/scripts/runs/${encodeURIComponent(id)}`),
 
   /** Which tests a change selects — the same computation a run does, without executing anything. */
   selectTests: (repo: string, b: { targets?: string[]; rev?: string }) => request<RunSelected>("POST", `${r(repo)}/tests`, b),
@@ -617,6 +623,41 @@ export interface Script {
   applies: boolean;
   /** its tool is installed; null when that can't be told without running anything */
   available: boolean | null;
+  /** how to get it runnable when `available` is false (D29) */
+  install: ScriptInstall | null;
+  /** spends model credit or writes to the checkout: the operator's machine only */
+  local_only: boolean;
+}
+
+export interface ScriptInstall {
+  /** setup: give the repo a test interpreter first · pip/npm: a fixed recipe · manual: a command for the operator */
+  method: "setup" | "pip" | "npm" | "manual";
+  package: string;
+  hint: string;
+  tool?: string;
+}
+
+export interface RuntimeStatus {
+  enabled: boolean;
+  reason: string | null;
+  /** allowed only because this is a showcase repo: one public run at a time, `timeout` seconds at most */
+  public: boolean;
+  timeout: number | null;
+  showcase: string[];
+}
+
+export interface ScriptRunSummary {
+  id: string;
+  started: number;
+  seconds: number;
+  scripts: number;
+  passed: number;
+  warned: number;
+  failed: number;
+  error: number;
+  skipped: number;
+  stopped: boolean;
+  trigger: "web" | "ask" | "cli" | string;
 }
 
 export interface ScriptListing {
@@ -627,6 +668,10 @@ export interface ScriptListing {
   files_scanned: number;
   can_exec: boolean;
   exec_reason: string | null;
+  /** can_exec only because this is a showcase repo (D29) */
+  public: boolean;
+  /** the repo has a test interpreter, and pytest in it */
+  env: { python: boolean; pytest: boolean };
 }
 
 export interface ScriptFinding {
@@ -660,3 +705,7 @@ export const runStreamUrl = (repo: string) => `/api/v1${r(repo)}/run/stream`;
 export const healStreamUrl = (repo: string, id: string) => `/api/v1${r(repo)}/runs/${encodeURIComponent(id)}/heal/stream`;
 /** POST {ids, timeout?}; SSE frames: start, script, test, result, done, error, end (D28). */
 export const scriptsStreamUrl = (repo: string) => `/api/v1${r(repo)}/scripts/run/stream`;
+/** POST {timeout?}; SSE frames: start, step, output, done, error, end (D29). */
+export const setupStreamUrl = (repo: string) => `/api/v1${r(repo)}/setup/stream`;
+/** POST {tools, timeout?}; SSE frames: start, step, output, done, error, end (D29). */
+export const installStreamUrl = (repo: string) => `/api/v1${r(repo)}/tools/install/stream`;

@@ -2,6 +2,39 @@
 
 ## Unreleased (2026-10-19)
 
+### Added: test results for every visitor, installs from the page, Aftershock's own probes (D29)
+
+The public site refused every run, so nobody but the operator ever saw a result or a culprit. Now:
+
+- **Showcase repos.** `AFTERSHOCK_SHOWCASE_REPOS=ledger,flask` names repos any visitor may run tests and scripts on,
+  set up and install tools for. Public runs are capped (`AFTERSHOCK_PUBLIC_RUN_TIMEOUT`, default 300 s) and limited to
+  one at a time across the site (429 + `Retry-After`). Re-indexing, deleting or attaching libraries to a showcase
+  repo is operator only, so a visitor can't swap the code that runs. Heal and `ai.unit-tests` stay operator only.
+- **The web proxy marks remote visitors** with `X-Aftershock-Remote`; the API treats them as non-local. The header
+  only narrows access, so a forged one costs the sender, not the server.
+- **Script results are recorded** (`ScriptRun` nodes, last 20 per repo, `GET /repos/{r}/scripts/runs[/{id}]`).
+  The library shows the newest batch on load, labelled with when it ran and from where (page, agent, CLI).
+- **Install what's missing.** Each unavailable script says how to get it: *Set up* (no test interpreter yet),
+  *Install* (a fixed pip or npm recipe; pip into the repo's interpreter, npm into Aftershock's own prefix with
+  `--ignore-scripts`), or the command for the operator (system packages). *Set up test environment* creates a venv,
+  installs the repo with its test extras, dependency groups and requirements files, plus pytest and coverage. Routes:
+  `POST /repos/{r}/setup/stream`, `POST /repos/{r}/tools/install/stream` (SSE, behind the run gate, names outside
+  the recipe list refused with 400). CLI: `aftershock setup REPO [--tools ...] [--tools-only]`.
+- **Five probe scripts Aftershock writes itself** (`aftershock/catalog/probes.py`), 194 scripts in all:
+  `py.import-smoke` (imports every module in its own interpreter), `py.cli-smoke` (every console script answers
+  `--help`), `pytest.flaky` (forward, reversed, forward: tests whose outcome changes, with order dependence called
+  out), `pytest.isolation` (each test file alone vs. the full suite), and `ai.unit-tests` (a model writes tests for
+  central code no test reaches; only files that pass are kept, in `tests/aftershock_generated/`).
+- **Secrets stay out of child processes.** Tests, coverage, tools and installs get an environment without
+  `AFTERSHOCK_*`, `FALKORDB_*`, `COVERAGE_*` or any `*KEY*/*TOKEN*/*SECRET*/*PASSWORD*/*CREDENTIAL*` variable.
+- **Deployment:** the image gets `/data/envs` (test interpreters) and `/data/showcase`; `scripts/showcase.sh`
+  provisions ledger (with an uncommitted demo edit, so the Tests page has a real failing diff) and seeds real runs.
+
+Tests: `tests/test_d29.py` (15): env scrubbing, requirement discovery, every library tool has a recipe (it caught
+`pip` missing), install refusals, the probes against synthetic repos with a planted order dependence and a planted
+cross-file dependence, runtime/showcase/proxy-header gating, showcase locks, the public 429, operator-only scripts,
+recorded runs and pruning.
+
 ### Added: a built-in script library (D28)
 
 Users no longer bring test scripts; Aftershock ships them. `aftershock/catalog/` defines 189 scripts in 9

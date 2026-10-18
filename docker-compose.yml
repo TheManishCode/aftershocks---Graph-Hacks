@@ -27,16 +27,21 @@ services:
     environment:
       FALKORDB_URL: redis://:${FALKORDB_PASSWORD:-aftershock}@falkordb:6379
       AFTERSHOCK_API_KEY: ${AFTERSHOCK_API_KEY:-}
-      AFTERSHOCK_REPO_ROOTS: /repos:/data/clones
+      AFTERSHOCK_REPO_ROOTS: /repos:/data/clones:/data/showcase
       AFTERSHOCK_WEB_ORIGIN: ${AFTERSHOCK_WEB_ORIGIN:-http://localhost:3101}
       AFTERSHOCK_ALLOWED_HOSTS: ${AFTERSHOCK_ALLOWED_HOSTS:-api:8100}
       AFTERSHOCK_CLONE_DIR: /data/clones
       AFTERSHOCK_CACHE_DIR: /data/cache
+      AFTERSHOCK_ENV_DIR: /data/envs
+      # D29: repos any visitor may run (capped, one at a time); provision them with scripts/showcase.sh
+      AFTERSHOCK_SHOWCASE_REPOS: ${AFTERSHOCK_SHOWCASE_REPOS:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - ${AFTERSHOCK_REPOS_DIR:-./repos}:/repos:ro
       - clones:/data/clones
       - cache:/data/cache
+      - envs:/data/envs
+      - showcase:/data/showcase
     ports:  # set API_BIND=0.0.0.0 (with AFTERSHOCK_API_KEY) to reach /mcp and the CI endpoints from elsewhere
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8100}:8100"
     depends_on:
@@ -62,3 +67,5 @@ volumes:
   falkordb-data:
   clones:
   cache:
+  envs:
+  showcase:
