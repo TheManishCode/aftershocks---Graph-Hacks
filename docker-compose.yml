@@ -8,6 +8,7 @@ services:
     image: falkordb/falkordb:${FALKORDB_TAG:-v4.22.1}
     environment:
       REDIS_ARGS: "--requirepass ${FALKORDB_PASSWORD:-aftershock} --appendonly yes"
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:-aftershock}  # read by the healthcheck below
       FALKORDB_ARGS: "THREAD_COUNT 4 TIMEOUT_MAX 60000"
     ports:  # loopback only: the graph has no business being reachable from the network
       - "127.0.0.1:${FALKORDB_PORT:-6390}:6379"
