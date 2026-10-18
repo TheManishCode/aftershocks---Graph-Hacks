@@ -2,14 +2,8 @@
 
 /**
  * Product vocabulary: the four components that know what a repo, a symbol or a
- * receipt *is*. Everything purely visual lives in `components/ds` — that file
+ * receipt *is*. Everything purely visual lives in `components/gt.tsx` — that file
  * decides appearance, this one decides meaning.
- *
- * It used to also hold the page furniture (Page, PageHeader, Tile, Stat,
- * Spinner, Empty, ErrorNote, Meter, Kbd) as a compatibility shim while the
- * screens were rebuilt. Every screen is now on `@/components/ds` directly, so
- * the shim is gone: there is exactly one Panel, one Metric and one Spinner in
- * the codebase, and a re-skin cannot miss half of the app.
  */
 
 import Link from "next/link";
@@ -37,14 +31,14 @@ export function Receipts({ r, className }: { r?: R; className?: string }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className={cn("inline-flex items-center gap-1.5 font-mono text-micro text-ink-muted tabular-nums", className)}
+          className={cn("inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[.04em] text-ink-dim tabular-nums", className)}
           tabIndex={0}
         >
           <Receipt className="size-3.5" aria-hidden />
           {r.queries} {r.queries === 1 ? "query" : "queries"} · {ms(r.total_ms)}
         </span>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="font-mono text-caption">
+      <TooltipContent side="bottom" className="font-mono text-[11px]">
         {r.queries} graph queries, {ms(r.graph_ms)} in FalkorDB, {ms(r.total_ms)} total
       </TooltipContent>
     </Tooltip>
@@ -57,7 +51,7 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
     <Button
       variant="outline"
       size="sm"
-      className={cn("h-7 text-caption", className)}
+      className={cn("h-7", className)}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);
@@ -70,7 +64,7 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
         }
       }}
     >
-      {done ? <Check className="size-3.5 text-pass" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}{" "}
+      {done ? <Check className="size-3.5 text-mark" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}{" "}
       {done ? "Copied" : label}
     </Button>
   );
@@ -81,7 +75,7 @@ export function SymLink({ repo, id, name, className }: { repo: string; id: strin
   return (
     <Link
       href={repoHref(repo, `/explore?ref=${encodeURIComponent(id)}`)}
-      className={cn("font-mono text-ink-strong underline-offset-2 hover:text-brand hover:underline", className)}
+      className={cn("font-mono text-ink underline-offset-2 hover:text-mark hover:underline", className)}
     >
       {symName(name ?? id.slice(id.indexOf("::") + 2))}
     </Link>
@@ -92,7 +86,7 @@ export function FileLink({ repo, path, line, className }: { repo: string; path: 
   return (
     <Link
       href={repoHref(repo, `/explore?file=${encodeURIComponent(path)}`)}
-      className={cn("font-mono text-ink-muted underline-offset-2 hover:text-brand hover:underline", className)}
+      className={cn("font-mono text-ink-dim underline-offset-2 hover:text-mark hover:underline", className)}
     >
       {path}
       {line ? `:${line}` : ""}

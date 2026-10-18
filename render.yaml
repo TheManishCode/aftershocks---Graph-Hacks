@@ -1,0 +1,43 @@
+# Render Blueprint: the API and its FalkorDB graph. The web UI deploys separately (Vercel, `web/`),
+# with AFTERSHOCK_API_URL pointing at the API service and AFTERSHOCK_API_KEY set to the same value as here.
+#
+# FalkorDB is a private service: reachable only from the API on Render's private network, never the internet.
+# Private services and disks need a paid plan.
+services:
+  - type: pserv
+    name: aftershock-falkordb
+    runtime: image
+    image:
+      url: docker.io/falkordb/falkordb:v4.22.1
+    plan: starter
+    envVars:
+      - key: REDIS_ARGS
+        value: "--appendonly yes"
+      - key: FALKORDB_ARGS
+        value: "THREAD_COUNT 2 TIMEOUT_MAX 60000"
+    disk:
+      name: falkordb-data
+      mountPath: /var/lib/falkordb/data
+      sizeGB: 1
+
+  - type: web
+    name: aftershock-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PORT
+        value: "8100"
+      - key: FALKORDB_URL
+        value: redis://aftershock-falkordb:6379
+      # Required on every mutating route; the Vercel proxy sends it, browsers never see it.
+      - key: AFTERSHOCK_API_KEY
+        generateValue: true
+      # Running a repo's tests executes its code: never on a public host.
+      - key: AFTERSHOCK_ALLOW_RUN
+        value: "0"
+      - key: AFTERSHOCK_WEB_ORIGIN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false

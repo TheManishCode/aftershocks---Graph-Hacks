@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-import { Check, CircleAlert, Loader2 } from "@/components/icons";
+import { Steps } from "@/components/gt";
 import { eventsUrl } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 /** The pipeline's stages, in order (aftershock/ingest/pipeline.py); "analyze" covers history, PageRank and communities. */
 const STAGES = [
@@ -72,47 +71,46 @@ export function useIndexJob(repo: string | null, after: number, onDone?: () => v
 export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
   const at = job.status === "done" ? STAGES.length : Math.max(0, STAGES.findIndex((x) => x.key === job.stage));
   const frac = job.stage === "parse" && job.total ? (job.done ?? 0) / job.total : 0;
+  // the rail fills by whole stages, plus the measured fraction of parse while it runs
+  const fill = job.status === "done" ? 1 : (at + (at === 0 ? frac : 0.5)) / STAGES.length;
+  const r = job.report;
   return (
-    <div className="as-in rounded-nested border border-line bg-surface-raised p-4" aria-live="polite">
-      <div className="mb-3 flex items-center gap-2 text-sm">
-        {job.status === "running" && <Loader2 className="size-4 animate-spin text-brand" aria-hidden />}
-        {job.status === "done" && <Check className="size-4 text-pass" aria-hidden />}
-        {job.status === "error" && <CircleAlert className="size-4 text-fail" aria-hidden />}
-        <span className="font-mono text-ink-strong">{repo}</span>
-        <span className="text-ink-muted">
-          {job.status === "running" ? "indexing…" : job.status === "done" ? "indexed" : (job.detail ?? "failed")}
+    <div className="border border-line bg-deep px-[clamp(14px,2vw,22px)] py-4" aria-live="polite">
+      <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-mono text-[13px] text-ink">{repo}</span>
+        <span className={job.status === "error" ? "font-mono text-[10.5px] tracking-[.12em] text-fail uppercase" : "font-mono text-[10.5px] tracking-[.12em] text-mark uppercase"}>
+          {job.status === "running" ? "indexing" : job.status === "done" ? "indexed" : "failed"}
+          {job.status === "running" && <span className="animate-blink">_</span>}
         </span>
+        {job.status === "error" && job.detail && <span className="text-[13px] text-fail">{job.detail}</span>}
         {job.stage === "parse" && job.total ? (
-          <span className="ml-auto font-mono text-caption text-ink-faint tabular-nums">
+          <span className="gt-fig ml-auto">
             {job.done}/{job.total} files
           </span>
         ) : null}
       </div>
-      <ol className="grid grid-cols-5 gap-1.5">
-        {STAGES.map((st, i) => (
-          <li key={st.key} className="min-w-0">
-            <div className="h-1 overflow-hidden rounded-full bg-line">
-              <div
-                className={cn("h-full rounded-full transition-[width] duration-300", job.status === "error" && i === at ? "bg-fail" : "bg-brand")}
-                style={{ width: i < at ? "100%" : i === at ? (st.key === "parse" ? `${Math.max(4, frac * 100)}%` : job.status === "error" ? "100%" : "40%") : "0%" }}
-              />
-            </div>
-            <div className={cn("mt-1.5 truncate text-micro", i <= at ? "text-ink" : "text-ink-faint")}>{st.label}</div>
-          </li>
-        ))}
-      </ol>
-      {job.status === "done" && job.report && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-caption text-ink-muted">
+      <Steps
+        fill={fill}
+        steps={STAGES.map((st, i) => ({
+          key: st.key,
+          title: st.label,
+          lit: i < at || (i === at && job.status !== "error"),
+          fail: job.status === "error" && i === at,
+          mark: i < at ? "done" : i === at ? (job.status === "error" ? "failed" : job.status === "done" ? "done" : "now") : "",
+        }))}
+      />
+      {job.status === "done" && r && (
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-ink-dim">
           {(["files", "parsed", "symbols", "edges"] as const).map((k) =>
-            job.report![k] !== undefined ? (
+            r[k] !== undefined ? (
               <span key={k}>
-                <span className="text-ink-strong">{String(job.report![k])}</span> {k}
+                <span className="text-mark">{String(r[k])}</span> {k}
               </span>
             ) : null,
           )}
-          {typeof job.report.call_sites === "number" && job.report.call_sites > 0 && (
+          {typeof r.call_sites === "number" && r.call_sites > 0 && (
             <span>
-              <span className="text-ink-strong">{Math.round(((job.report.resolved_sites as number) / job.report.call_sites) * 100)}%</span> call sites resolved
+              <span className="text-mark">{Math.round(((r.resolved_sites as number) / r.call_sites) * 100)}%</span> call sites resolved
             </span>
           )}
         </div>

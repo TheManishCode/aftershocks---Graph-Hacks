@@ -1,22 +1,19 @@
-import { Grid, Page, Skeleton } from "@/components/ds";
+import { Page, Skeleton } from "@/components/gt";
 
-/**
- * A skeleton in the shape of a repo page (header, then a main/aside split) so the
- * layout does not jump when the real content arrives.
- *
- * A <div>, not a <main>: the shell already renders the page's single
- * `<main id="content">` and this is nested inside it.
- */
+/** A skeleton in the shape of a repo page (head, then an aside/main split) so the layout does not jump. */
 export default function RepoLoading() {
   return (
-    <Page role="status" aria-label="Loading">
-      <Skeleton className="mb-6 h-9 w-56" />
-      <Grid cols="aside-main">
-        <Skeleton className="h-64" />
-        <Skeleton className="h-64" />
-      </Grid>
-      <Skeleton className="mt-4 h-80" />
-      <span className="sr-only">Loading…</span>
+    <Page>
+      <div role="status" aria-label="Loading">
+        <Skeleton className="mb-3 h-3 w-28" />
+        <Skeleton className="mb-10 h-12 w-[min(560px,80%)]" />
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
+        <Skeleton className="mt-4 h-80" />
+        <span className="sr-only">Loading…</span>
+      </div>
     </Page>
   );
 }

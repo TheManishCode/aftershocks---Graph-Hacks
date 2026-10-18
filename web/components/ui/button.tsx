@@ -8,24 +8,24 @@ const buttonVariants = cva(
   // declares, not an off-scale 13px sans. This keeps buttons in the same voice
   // as the eyebrows, chips and segmented controls they sit beside — the
   // `link` variant opts back out below, because a link inside prose is prose.
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-mono text-label font-semibold uppercase whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-mono text-[10.5px] font-medium tracking-[.1em] uppercase whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-cta hover:brightness-110 active:brightness-95",
+        default: "bg-mark text-on-mark hover:brightness-110 active:brightness-95",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         outline:
-          "border border-line-strong bg-transparent text-ink hover:bg-accent hover:text-ink-strong",
+          "border border-line-loud bg-transparent text-ink hover:bg-accent hover:text-ink",
         secondary:
-          "bg-surface-overlay text-ink-strong hover:bg-line-strong",
+          "bg-deep text-ink hover:bg-line-loud",
         ghost:
-          "font-normal text-ink-muted hover:bg-accent hover:text-ink",
-        link: "font-sans text-body-sm font-normal normal-case text-brand underline-offset-4 hover:underline",
+          "font-normal text-ink-dim hover:bg-accent hover:text-ink",
+        link: "font-sans text-[13px] font-normal normal-case text-mark underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-micro has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        xs: "h-6 gap-1 rounded-md px-2 text-[10px] has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-9",

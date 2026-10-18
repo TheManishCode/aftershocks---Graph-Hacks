@@ -19,65 +19,27 @@
  *    not be able to revoke it.
  *
  * Everything is listed, including providers with no key — the catalogue *is*
- * the answer to "what can I plug in?", and hiding the unconfigured ones would
- * make the page useless to the person who came here to configure one.
+ * the answer to "what can I plug in?".
  */
 
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import {
-  ArrowRight,
-  Check,
-  CircleAlert,
-  Github,
-  Key,
-  Loader2,
-  Prohibit,
-  Sparkles,
-  Trash,
-  X,
-} from "@/components/icons";
-import {
-  Callout,
-  Chip,
-  Code,
-  Divider,
-  ErrorNote,
-  Eyebrow,
-  Mono,
-  Page,
-  PageHeader,
-  Panel,
-  SkeletonRows,
-  Stack,
-} from "@/components/ds";
+import { Callout, Chip, ErrorNote, Head, Label, Mono, Page, Sheet, Skeleton, Stack } from "@/components/gt";
+import { ArrowRight, Check, CircleAlert, Github, Key, Loader2, Prohibit, Sparkles, Trash, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, type ProviderStatus } from "@/lib/api";
 import { useQuery } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-/* -------------------------------------------------------------------------- */
-
 function SourceChip({ p }: { p: ProviderStatus }) {
-  if (!p.configured) return <Chip tone="neutral">no key</Chip>;
-  if (p.source === "local")
-    return (
-      <Chip tone="info" dot>
-        local
-      </Chip>
-    );
-  return (
-    <Chip tone="pass" dot>
-      {p.source === "env" ? "env" : "stored"}
-    </Chip>
-  );
+  if (!p.configured) return <Chip>no key</Chip>;
+  if (p.source === "local") return <Chip tone="info">local</Chip>;
+  return <Chip tone="pass">{p.source === "env" ? "env" : "stored"}</Chip>;
 }
 
-function ProviderCard({ p, onChanged }: { p: ProviderStatus; onChanged: () => void }) {
+function ProviderSheet({ p, onChanged }: { p: ProviderStatus; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -133,47 +95,40 @@ function ProviderCard({ p, onChanged }: { p: ProviderStatus; onChanged: () => vo
   };
 
   return (
-    <Panel
-      tone={p.configured ? "default" : "bare"}
-      className={cn(!p.configured && "border-line border-dashed")}
+    <Sheet
+      tone={p.configured ? "library" : "void"}
+      className={cn(!p.configured && "[&_.gt-sheet]:border-dashed")}
       title={p.label}
       note={`${p.models.length} model${p.models.length === 1 ? "" : "s"} · ${p.wire} wire`}
       action={
-        <div className="flex items-center gap-2">
-          {p.configured && p.last4 && <Mono className="text-caption text-ink-muted">…{p.last4}</Mono>}
+        <>
+          {p.configured && p.last4 && <Mono className="text-[11px] text-ink-dim">…{p.last4}</Mono>}
           <SourceChip p={p} />
-        </div>
+        </>
       }
-      bodyClassName="flex flex-col gap-3"
+      bodyClassName="flex flex-col gap-4"
     >
       <ul className="flex flex-wrap gap-1.5">
         {p.models.map((m) => (
           <li key={m.id}>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-control border px-2 py-1",
-                p.configured ? "border-line-strong bg-surface" : "border-line",
-              )}
-              title={m.id}
-            >
-              <span className={cn("text-caption", p.configured ? "text-ink-strong" : "text-ink-muted")}>{m.label}</span>
-              {m.reasoning && <Sparkles className="size-3 text-brand" aria-label="reasoning model" />}
-              {m.note && <span className="text-micro text-ink-faint">{m.note}</span>}
+            <span className={cn("inline-flex items-center gap-1.5 border px-2 py-1", p.configured ? "border-line-loud bg-deep" : "border-line")} title={m.id}>
+              <span className={cn("font-mono text-[11.5px]", p.configured ? "text-ink" : "text-ink-dim")}>{m.label}</span>
+              {m.reasoning && <Sparkles className="size-3 text-mark" aria-label="reasoning model" />}
+              {m.note && <span className="text-[10.5px] text-ink-faint">{m.note}</span>}
             </span>
           </li>
         ))}
       </ul>
 
-      <Divider />
+      <div className="h-px bg-line" aria-hidden />
 
       {p.keyless ? (
-        <p className="text-caption text-ink-muted">
-          Needs no key — it talks to a server you run. Point it somewhere else with{" "}
-          <Code>{p.env_vars[0] ?? "OLLAMA_HOST"}</Code>. Never chosen automatically: a local server nobody started
-          would turn every question into a connection error.
+        <p className="text-[12.5px] leading-relaxed text-ink-dim">
+          Needs no key — it talks to a server you run. Point it somewhere else with <Mono className="text-ink">{p.env_vars[0] ?? "OLLAMA_HOST"}</Mono>. Never
+          chosen automatically: a local server nobody started would turn every question into a connection error.
         </p>
       ) : fromEnv ? (
-        <p className="flex items-start gap-2 text-caption text-ink-muted">
+        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ink-dim">
           <Prohibit className="mt-px size-3.5 shrink-0" aria-hidden />
           <span>
             Set from the environment
@@ -183,23 +138,20 @@ function ProviderCard({ p, onChanged }: { p: ProviderStatus; onChanged: () => vo
                 {p.env_vars.map((v, i) => (
                   <span key={v}>
                     {i > 0 && " or "}
-                    <Code>{v}</Code>
+                    <Mono className="text-ink">{v}</Mono>
                   </span>
                 ))}
                 {")"}
               </>
             )}
-            . An environment key belongs to whoever runs the server, so it wins over anything stored here and cannot
-            be cleared from a browser.
+            . An environment key belongs to whoever runs the server, so it wins over anything stored here and cannot be cleared from a browser.
           </span>
         </p>
       ) : editing ? (
         <form onSubmit={save} className="flex flex-col gap-2">
-          <Label htmlFor={`key-${p.id}`}>
-            <Eyebrow>API key</Eyebrow>
-          </Label>
+          <Label htmlFor={`key-${p.id}`}>API key</Label>
           <div className="flex flex-wrap items-center gap-2">
-            <Input
+            <input
               id={`key-${p.id}`}
               type="password"
               value={key}
@@ -208,39 +160,37 @@ function ProviderCard({ p, onChanged }: { p: ProviderStatus; onChanged: () => vo
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              // A pasted secret has no business in the browser's form-restore cache.
+              // A pasted secret has no business in a password manager's capture prompt.
               data-1p-ignore
               data-lpignore="true"
-              className="min-w-0 flex-1 font-mono"
+              className="gt-field min-w-0 flex-1"
               // The field only exists because the user just clicked "Add key"; focus follows the intent.
               autoFocus
             />
-            <Button type="submit" disabled={busy || !key.trim()}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Save
+            <Button type="submit" className="h-10" disabled={busy || !key.trim()}>
+              {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />} Save
             </Button>
-            <Button type="button" variant="ghost" onClick={reset} disabled={busy}>
-              <X className="size-4" /> Cancel
+            <Button type="button" variant="ghost" className="h-10" onClick={reset} disabled={busy}>
+              <X className="size-4" aria-hidden /> Cancel
             </Button>
           </div>
-          <p className="text-caption text-ink-muted">
-            Sent once to the API on this machine, written to disk owner-only, and never returned by any route.
-          </p>
+          <p className="text-[11.5px] text-ink-faint">Sent once to the API on this machine, written to disk owner-only, and never returned by any route.</p>
         </form>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant={p.configured ? "outline" : "default"} onClick={() => setEditing(true)} disabled={busy}>
-            <Key className="size-4" /> {p.configured ? "Replace key" : "Add key"}
+          <Button variant={p.configured ? "outline" : "default"} size="sm" onClick={() => setEditing(true)} disabled={busy}>
+            <Key className="size-4" aria-hidden /> {p.configured ? "Replace key" : "Add key"}
           </Button>
           {p.configured && p.source === "stored" && (
-            <Button variant="ghost" onClick={clear} disabled={busy}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash className="size-4" />} Remove
+            <Button variant="ghost" size="sm" onClick={clear} disabled={busy}>
+              {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Trash className="size-4" aria-hidden />} Remove
             </Button>
           )}
           <a
             href={p.docs}
             target="_blank"
             rel="noreferrer noopener"
-            className="ml-auto inline-flex items-center gap-1 text-caption text-ink-muted underline-offset-2 hover:text-brand hover:underline"
+            className="ml-auto inline-flex items-center gap-1 text-[12px] text-ink-dim underline-offset-2 hover:text-mark hover:underline"
           >
             Get a key <ArrowRight className="size-3.5" aria-hidden />
           </a>
@@ -248,11 +198,9 @@ function ProviderCard({ p, onChanged }: { p: ProviderStatus; onChanged: () => vo
       )}
 
       {error && <ErrorNote error={error} />}
-    </Panel>
+    </Sheet>
   );
 }
-
-/* -------------------------------------------------------------------------- */
 
 export default function ModelSettingsPage() {
   const q = useQuery("providers", api.providers);
@@ -263,36 +211,44 @@ export default function ModelSettingsPage() {
 
   return (
     <Page>
-      <PageHeader
-        eyebrow="Settings"
-        title="Models"
-        sub="Ask runs on whichever provider you give a key to. Keys are stored by the API on this machine, owner-only, and are never sent back to the browser."
+      <Head
+        no="Settings · Models"
+        title={
+          <>
+            Bring <em>your own key.</em>
+          </>
+        }
+        lead="Ask runs on whichever provider you give a key to. Keys are stored by the API on this machine, owner-only, and are never sent back to the browser."
+        meta={q.data ? [{ fig: String(ready.length), label: ready.length === 1 ? "provider ready" : "providers ready" }] : undefined}
       >
-        <Button asChild variant="outline">
+        <Button asChild variant="outline" size="sm">
           <Link href="/">
-            Back to repositories <ArrowRight className="size-4" />
+            Back to repositories <ArrowRight className="size-4" aria-hidden />
           </Link>
         </Button>
-      </PageHeader>
+      </Head>
 
       <Stack>
         {q.error ? (
           <ErrorNote error={q.error} onRetry={q.reload} />
         ) : q.loading && !q.data ? (
-          <SkeletonRows rows={6} />
+          <Stack className="gap-2">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </Stack>
         ) : (
           <>
-            <Panel title="Status" bodyClassName="flex flex-col gap-2">
-              <p className="text-body-sm text-ink">
+            <Sheet no="01 · Status" title="Status" tone="capture" bodyClassName="flex flex-col gap-3">
+              <p className="text-[13.5px] leading-relaxed text-ink">
                 {ready.length === 0 ? (
                   <>
-                    No provider is configured, so Ask falls back to its keyword router: it still answers from the
-                    graph, but it picks the tool by pattern instead of reasoning about your question.
+                    No provider is configured, so Ask falls back to its keyword router: it still answers from the graph, but it picks the tool by pattern instead of
+                    reasoning about your question.
                   </>
                 ) : (
                   <>
-                    <Mono className="text-ink-strong">{ready.length}</Mono> provider
-                    {ready.length === 1 ? "" : "s"} ready —{" "}
+                    <Mono className="text-mark">{ready.length}</Mono> provider{ready.length === 1 ? "" : "s"} ready —{" "}
                     {ready.map((p, i) => (
                       <span key={p.id}>
                         {i > 0 && ", "}
@@ -304,33 +260,34 @@ export default function ModelSettingsPage() {
                 )}
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <Eyebrow>Default</Eyebrow>
-                {def ? <Mono className="text-body-sm text-ink-strong">{def}</Mono> : <Chip tone="neutral">none</Chip>}
+                <span className="gt-label">Default</span>
+                {def ? <Mono className="text-[13px] text-ink">{def}</Mono> : <Chip>none</Chip>}
               </div>
               {def && !defKnown && (
                 // Worth saying rather than hiding: the server's configured model id is not one this build knows
                 // about, so a request naming no model may be rejected by the provider.
-                <Callout tone="warn" icon={<CircleAlert className="text-warn" aria-hidden />}>
-                  The server&apos;s default <Mono>{def}</Mono> is not in the catalogue below. It comes from{" "}
-                  <Code>AFTERSHOCK_MODEL</Code> (or the <Code>model</Code> setting) — if the provider rejects it,
-                  choose a model explicitly in Ask or correct the setting.
+                <Callout tone="warn" icon={<CircleAlert className="size-4 text-warn" aria-hidden />}>
+                  The server&apos;s default <Mono>{def}</Mono> is not in the catalogue below. It comes from <Mono>AFTERSHOCK_MODEL</Mono> (or the{" "}
+                  <Mono>model</Mono> setting) — if the provider rejects it, choose a model explicitly in Ask or correct the setting.
                 </Callout>
               )}
-            </Panel>
+            </Sheet>
 
-            <Callout tone="info" icon={<Key className="text-info" aria-hidden />}>
-              Keys can only be added or removed from the machine the API runs on. On a shared deployment, set the
-              environment variable listed on each provider instead — the browser form will be refused, by design.
+            <Callout tone="info" icon={<Key className="size-4 text-info" aria-hidden />}>
+              Keys can only be added or removed from the machine the API runs on. On a shared deployment, set the environment variable listed on each provider
+              instead — the browser form will be refused, by design.
             </Callout>
 
-            {providers.map((p) => (
-              <ProviderCard key={p.id} p={p} onChanged={q.reload} />
-            ))}
+            <div className="grid gap-[clamp(14px,2vw,24px)] lg:grid-cols-2">
+              {providers.map((p) => (
+                <ProviderSheet key={p.id} p={p} onChanged={q.reload} />
+              ))}
+            </div>
 
-            <p className="flex items-center gap-1.5 text-caption text-ink-muted">
+            <p className="flex items-center gap-1.5 text-[12px] text-ink-dim">
               <Github className="size-3.5" aria-hidden />
-              Missing a provider? Any OpenAI-compatible endpoint works on the <Mono>openai</Mono> wire — adding one is
-              an entry in <Mono>aftershock/providers.py</Mono>.
+              Missing a provider? Any OpenAI-compatible endpoint works on the <Mono>openai</Mono> wire — adding one is an entry in{" "}
+              <Mono>aftershock/providers.py</Mono>.
             </p>
           </>
         )}

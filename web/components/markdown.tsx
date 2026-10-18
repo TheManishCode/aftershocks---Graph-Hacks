@@ -21,35 +21,35 @@ export function githubToMarkdown(text: string): string {
 /** The model's answer as Markdown (GFM tables, lists, code). No raw HTML: react-markdown escapes it by default. */
 export function Markdown({ text }: { text: string }) {
   return (
-    <div className="space-y-2 text-sm leading-relaxed break-words [&_strong]:font-semibold [&_strong]:text-ink-strong">
+    <div className="space-y-2 gt-prose text-[14px] leading-[1.65] text-ink-dim break-words [&_strong]:font-medium [&_strong]:text-ink">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer noopener" className="text-brand underline-offset-2 hover:underline">
+            <a href={href} target="_blank" rel="noreferrer noopener" className="text-mark underline-offset-2 hover:underline">
               {children}
             </a>
           ),
           ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
-          h1: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
-          h2: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
-          h3: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
+          h1: ({ children }) => <p className="font-medium text-ink">{children}</p>,
+          h2: ({ children }) => <p className="font-medium text-ink">{children}</p>,
+          h3: ({ children }) => <p className="font-medium text-ink">{children}</p>,
           code: ({ children, className }) =>
             className ? (
               <code className={className}>{children}</code>
             ) : (
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-ink-strong">{children}</code>
+              <code className="bg-black/25 px-1 py-0.5 font-mono text-[0.85em] text-ink">{children}</code>
             ),
-          pre: ({ children }) => <pre className="overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-xs">{children}</pre>,
+          pre: ({ children }) => <pre className="gt-scroll overflow-x-auto border border-line bg-deep p-3 font-mono text-[12px] text-ink">{children}</pre>,
           table: ({ children }) => (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-xs">{children}</table>
+            <div className="gt-scroll overflow-x-auto border-y border-line">
+              <table className="w-full text-[12.5px]">{children}</table>
             </div>
           ),
-          th: ({ children }) => <th className="border-b border-border bg-card/60 px-2 py-1.5 text-left font-medium">{children}</th>,
-          td: ({ children }) => <td className="border-b border-border/60 px-2 py-1.5">{children}</td>,
-          blockquote: ({ children }) => <blockquote className="border-l-2 border-brand/50 pl-3 text-muted-foreground">{children}</blockquote>,
+          th: ({ children }) => <th className="border-b border-line px-2 py-1.5 text-left font-mono text-[10px] font-medium tracking-[.12em] text-ink-faint uppercase">{children}</th>,
+          td: ({ children }) => <td className="border-b border-line px-2 py-1.5">{children}</td>,
+          blockquote: ({ children }) => <blockquote className="border-l border-mark/60 pl-3 text-ink-faint">{children}</blockquote>,
         }}
       >
         {githubToMarkdown(text)}

@@ -11,3 +11,10 @@ web/.next/
 dist/
 .git-broken-bak-*/
 web/tsconfig.tsbuildinfo
+
+# local-only
+web-rebuild/
+.vercel/
+*.webm
+web/.env*
+!web/.env.example

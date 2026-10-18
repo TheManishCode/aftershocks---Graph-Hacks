@@ -4,16 +4,17 @@
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, minHeight: "100vh", background: "#050505", color: "#dedbc8", fontFamily: "system-ui, sans-serif" }}>
+      <body style={{ margin: 0, minHeight: "100vh", background: "#4e5050", color: "#f2f2ef", fontFamily: "Helvetica Neue, Inter, system-ui, sans-serif" }}>
         <main style={{ maxWidth: 560, margin: "0 auto", padding: "96px 16px" }}>
-          <h1 style={{ fontSize: 22, fontWeight: 500, color: "#f6f3e4" }}>Aftershock failed to load</h1>
-          <p style={{ fontSize: 14, color: "#9d998c" }}>{error.message || "An unexpected error stopped the app from rendering."}</p>
+          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: ".14em", color: "#d0ff14" }}>ERR · LAYOUT</div>
+          <h1 style={{ fontSize: 28, fontWeight: 500, margin: "12px 0" }}>Aftershock failed to load</h1>
+          <p style={{ fontSize: 14, color: "#c3c6c4" }}>{error.message || "An unexpected error stopped the app from rendering."}</p>
           <button
             type="button"
             onClick={reset}
-            style={{ marginTop: 16, minHeight: 44, padding: "0 20px", borderRadius: 6, border: 0, background: "#e6c77d", color: "#050505", fontSize: 14, cursor: "pointer" }}
+            style={{ marginTop: 16, minHeight: 44, padding: "0 20px", border: 0, background: "#d0ff14", color: "#111", fontSize: 13, letterSpacing: ".1em", cursor: "pointer" }}
           >
-            Try again
+            TRY AGAIN
           </button>
         </main>
       </body>

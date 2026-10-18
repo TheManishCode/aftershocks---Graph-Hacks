@@ -58,17 +58,17 @@ export function SymbolPicker({
       <Command shouldFilter={false} className="overflow-visible bg-transparent">
         <PopoverAnchor asChild>
           <div
-            className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+            className="gt-field flex min-h-11 flex-wrap items-center gap-1.5 px-2 py-1.5"
             onClick={() => input.current?.focus()}
           >
             {value.map((v) => {
               const [file, qn] = splitId(v);
               return (
-                <span key={v} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-white/5 py-0.5 pr-1 pl-2 font-mono text-xs text-ink-strong">
+                <span key={v} className="inline-flex max-w-full items-center gap-1 border border-mark/70 bg-mark/10 py-0.5 pr-1 pl-2 font-mono text-[12px] text-mark">
                   <span className="truncate" title={v}>
                     {qn || file}
                   </span>
-                  <button type="button" className="rounded-sm p-0.5 text-ink-muted hover:text-ink-strong" onClick={() => remove(v)} aria-label={`Remove ${v}`}>
+                  <button type="button" className="p-0.5 text-mark/70 hover:text-mark" onClick={() => remove(v)} aria-label={`Remove ${v}`}>
                     <X className="size-3" />
                   </button>
                 </span>
@@ -91,7 +91,7 @@ export function SymbolPicker({
                 }
               }}
               placeholder={value.length && multiple ? "Add another…" : value.length ? "" : placeholder}
-              className="h-7 min-w-[12ch] flex-1 bg-transparent font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground"
+              className="h-7 min-w-[12ch] flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:font-sans placeholder:text-ink-faint"
               autoComplete="off"
               spellCheck={false}
               aria-autocomplete="list"
@@ -109,9 +109,9 @@ export function SymbolPicker({
               <CommandGroup heading="Symbols">
                 {syms.map((s) => (
                   <CommandItem key={s.id} value={s.id} onSelect={() => add(s.id)}>
-                    <Code className={cn("size-4", s.is_test ? "text-info" : "text-ink-muted")} />
-                    <span className="truncate font-mono text-ink-strong">{symName(s.qname)}</span>
-                    <span className="ml-auto truncate pl-3 font-mono text-[11px] text-ink-muted">
+                    <Code className={cn("size-4", s.is_test ? "text-info" : "text-ink-faint")} />
+                    <span className="truncate font-mono text-ink">{symName(s.qname)}</span>
+                    <span className="ml-auto truncate pl-3 font-mono text-[11px] text-ink-dim">
                       {s.kind} · {s.file}:{s.line}
                     </span>
                   </CommandItem>
@@ -122,7 +122,7 @@ export function SymbolPicker({
               <CommandGroup heading="Files">
                 {fs.map((f) => (
                   <CommandItem key={f.path} value={`file:${f.path}`} onSelect={() => add(f.path)}>
-                    <FileCode className="size-4 text-ink-muted" />
+                    <FileCode className="size-4 text-ink-faint" />
                     <span className="truncate font-mono text-ink">{f.path}</span>
                   </CommandItem>
                 ))}

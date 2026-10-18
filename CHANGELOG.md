@@ -2,6 +2,23 @@
 
 ## Unreleased (2026-10-18)
 
+### Changed: the web UI, rebuilt again in the GROUNDTRUTH design
+
+- Every page rebuilt on one primitive set (`web/components/gt.tsx`); the previous
+  `components/ds/*` layer, the ambient background and the `/design` page are removed.
+- Feature parity with the previous UI on all pages (home/indexing, overview, impact,
+  diff, culprit + heal, path, tests + libraries + live runs, explore, ask, cypher,
+  model settings), plus error, loading and not-found pages.
+- New: a lazy **File map** on the overview (import graph of the top 150 files, click
+  to explore), using the previously unused `/graph` endpoint.
+- Fixed: mobile nav and list rows ignored responsive `hidden`/layout because unlayered
+  `gt-*` CSS set `display`.
+- `scripts/demo_video.mjs` re-records a captioned walkthrough on the `ledger` demo repo
+  (register a test library, re-index, impact, diff, path, run tests, culprit, Ask with a
+  cheap OpenRouter model, Cypher). Key suffixes are masked in the recording.
+
+### Earlier the same day
+
 ### Changed: the web UI, rebuilt (D27)
 
 The frontend was rebuilt from the backend outward rather than restyled. Three problems

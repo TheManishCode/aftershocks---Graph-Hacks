@@ -13,7 +13,7 @@
  */
 
 import { Check, ChevronDown, Settings, Sparkles } from "@/components/icons";
-import { Chip, Mono } from "@/components/ds";
+import { Chip, Mono } from "@/components/gt";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Effort, ProviderStatus } from "@/lib/api";
@@ -61,9 +61,9 @@ export function ModelPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={disabled} className="h-7 gap-1.5 px-2 text-ink-muted hover:text-ink-strong">
+        <Button variant="ghost" size="sm" disabled={disabled} className="h-7 gap-1.5 px-2 text-ink-dim hover:text-mark">
           <Sparkles className="size-3.5" aria-hidden />
-          <span className="max-w-[18ch] truncate text-caption">{current.id ? current.label : "Default model"}</span>
+          <span className="max-w-[18ch] truncate">{current.id ? current.label : "Default model"}</span>
           <ChevronDown className="size-3" aria-hidden />
         </Button>
       </PopoverTrigger>
@@ -79,7 +79,7 @@ export function ModelPicker({
           </li>
           {configured.map((p) => (
             <li key={p.id}>
-              <p className="px-2 pt-2 pb-1 font-mono text-micro uppercase text-ink-faint">{p.label}</p>
+              <p className="px-2 pt-3 pb-1 font-mono text-[10px] tracking-[.14em] uppercase text-ink-faint">{p.label}</p>
               <ul>
                 {p.models.map((m) => (
                   <li key={m.id}>
@@ -97,7 +97,7 @@ export function ModelPicker({
           ))}
           {configured.length === 0 && (
             <li className="px-2 py-3">
-              <p className="text-caption text-ink-muted">
+              <p className="text-[12.5px] text-ink-dim">
                 No provider has a key, so every question goes to the deterministic router — one tool, matched by
                 pattern.
               </p>
@@ -134,18 +134,18 @@ function Row({
       aria-selected={selected}
       onClick={onSelect}
       className={cn(
-        "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left transition-colors",
-        "hover:bg-accent/60",
-        selected && "bg-accent/40",
+        "flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors",
+        "hover:bg-white/5",
+        selected && "bg-mark/10 shadow-[inset_2px_0_0_var(--gt-chartreuse)]",
       )}
     >
-      <Check className={cn("size-3.5 shrink-0", selected ? "text-brand" : "opacity-0")} aria-hidden />
+      <Check className={cn("size-3.5 shrink-0", selected ? "text-mark" : "opacity-0")} aria-hidden />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-body-sm text-ink-strong">{label}</span>
-        {note && <Mono className="block truncate text-micro text-ink-faint">{note}</Mono>}
+        <span className="block truncate text-[13px] text-ink">{label}</span>
+        {note && <Mono className="block truncate text-[10.5px] text-ink-faint">{note}</Mono>}
       </span>
       {badge && (
-        <Chip tone="brand" size="sm">
+        <Chip tone="mark">
           {badge}
         </Chip>
       )}

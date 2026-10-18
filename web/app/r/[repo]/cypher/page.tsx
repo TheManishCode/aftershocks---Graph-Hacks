@@ -3,56 +3,38 @@
 /**
  * Cypher: the graph itself, read-only.
  *
- * This is the escape hatch — every other page is a question someone decided to
- * ask in advance, and this is the one for the question nobody anticipated. It
- * is therefore built to be *trusted*: the header states the safety properties
- * (RO_QUERY, a timeout and a row cap) outright, because an open query box over
- * a production graph is otherwise a reasonable thing to be afraid of.
+ * The escape hatch — every other page is a question someone decided to ask in
+ * advance, and this is the one for the question nobody anticipated. It is
+ * built to be *trusted*: the head states the safety properties (RO_QUERY, a
+ * timeout and a row cap) outright, because an open query box over a graph is
+ * otherwise a reasonable thing to be afraid of.
  *
- * The example queries are the documentation. A schema reference nobody can run
- * teaches less than five queries that return rows on the reader's own repo, so
- * the node and edge labels sit directly under the examples that use them.
+ * The example queries are the documentation: five queries that return rows on
+ * the reader's own repo teach more than a schema reference nobody can run.
  */
 
 import { useState } from "react";
 
-import {
-  Code,
-  Empty,
-  ErrorNote,
-  Eyebrow,
-  Grid,
-  Kbd,
-  Page,
-  PageHeader,
-  Panel,
-  Scroller,
-  Spinner,
-  Stack,
-} from "@/components/ds";
-import { Database, Terminal } from "@/components/icons";
+import { Cols, Empty, ErrorNote, Head, Measuring, Page, Sheet, Stack, no2 } from "@/components/gt";
+import { Terminal } from "@/components/icons";
 import { CopyButton, Receipts } from "@/components/kit";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { num } from "@/lib/format";
 import { useAction, useModKey, useRepo } from "@/lib/hooks";
-import { cn } from "@/lib/utils";
 
 const EXAMPLES: { label: string; query: string }[] = [
   {
     label: "Most called functions",
-    query:
-      "MATCH (s:Symbol) WHERE s.kind IN ['function','method']\nRETURN s.qname AS name, s.file AS file, s.fan_in AS callers\nORDER BY callers DESC LIMIT 20",
+    query: "MATCH (s:Symbol) WHERE s.kind IN ['function','method']\nRETURN s.qname AS name, s.file AS file, s.fan_in AS callers\nORDER BY callers DESC LIMIT 20",
   },
   {
     label: "Callers of callers (2 hops)",
-    query:
-      "MATCH (a:Symbol)-[:CALLS*1..2]->(b:Symbol {name: 'run'})\nRETURN DISTINCT a.qname AS caller, a.file AS file LIMIT 50",
+    query: "MATCH (a:Symbol)-[:CALLS*1..2]->(b:Symbol {name: 'run'})\nRETURN DISTINCT a.qname AS caller, a.file AS file LIMIT 50",
   },
   {
     label: "Files that change together",
-    query:
-      "MATCH (a:File)-[c:CO_CHANGES]->(b:File)\nRETURN a.path AS a, b.path AS b, c.count AS times, c.strength AS strength\nORDER BY strength DESC LIMIT 25",
+    query: "MATCH (a:File)-[c:CO_CHANGES]->(b:File)\nRETURN a.path AS a, b.path AS b, c.count AS times, c.strength AS strength\nORDER BY strength DESC LIMIT 25",
   },
   {
     label: "Edge resolution mix",
@@ -66,18 +48,9 @@ const EXAMPLES: { label: string; query: string }[] = [
 ];
 
 const NODES = ["Repo", "File", "Symbol", "External", "Person"];
-const EDGES = [
-  "CALLS",
-  "INHERITS",
-  "IMPLEMENTS",
-  "OVERRIDES",
-  "IMPORTS",
-  "USES",
-  "DEFINES",
-  "CONTAINS",
-  "CO_CHANGES",
-  "AUTHORED",
-];
+const EDGES = ["CALLS", "INHERITS", "IMPLEMENTS", "OVERRIDES", "IMPORTS", "USES", "DEFINES", "CONTAINS", "CO_CHANGES", "AUTHORED"];
+
+const KBD = "inline-grid h-5 min-w-5 place-items-center border border-line-loud px-1 font-mono text-[10px] text-ink-dim";
 
 /** A graph value as one table cell. `∅` for null, so an empty cell cannot be mistaken for a blank string. */
 function cell(v: unknown): string {
@@ -90,12 +63,12 @@ function cell(v: unknown): string {
 function Labels({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <Eyebrow className="mb-1.5 block">{title}</Eyebrow>
+      <div className="gt-label mb-2">{title}</div>
       <div className="flex flex-wrap gap-1">
         {items.map((x) => (
-          <Code key={x} className="text-[10.5px]">
+          <code key={x} className="border border-line bg-deep px-1.5 py-0.5 font-mono text-[10.5px] text-ink-dim">
             {x}
-          </Code>
+          </code>
         ))}
       </div>
     </div>
@@ -109,9 +82,7 @@ export default function CypherPage() {
   const run = useAction(api.cypher);
   const d = run.data;
   const cols = d?.rows.length ? Object.keys(d.rows[0]) : [];
-  const csv = d
-    ? [cols.join(","), ...d.rows.map((r) => cols.map((c) => JSON.stringify(cell(r[c]))).join(","))].join("\n")
-    : "";
+  const csv = d ? [cols.join(","), ...d.rows.map((r) => cols.map((c) => JSON.stringify(cell(r[c]))).join(","))].join("\n") : "";
 
   const submit = () => {
     if (query.trim()) run.run(repo, query);
@@ -119,49 +90,55 @@ export default function CypherPage() {
 
   return (
     <Page>
-      <PageHeader
-        title="Cypher"
-        sub="The graph itself, read-only. Queries run as GRAPH.RO_QUERY with a timeout and a row cap, so nothing here can change or exhaust the database."
+      <Head
+        no="09 · Cypher"
+        title={
+          <>
+            The graph itself, <em>read-only.</em>
+          </>
+        }
+        lead="Queries run as GRAPH.RO_QUERY with a timeout and a row cap, so nothing here can change or exhaust the database."
+        meta={d ? [{ fig: num(d.count), label: d.count === 1 ? "row" : "rows" }] : undefined}
       >
         {d && <Receipts r={d.receipts} />}
-      </PageHeader>
+      </Head>
 
-      <Grid cols="aside-main">
-        <Stack className="gap-3">
-          <Panel title="Examples" flush>
-            <ul className="space-y-0.5 p-1.5">
-              {EXAMPLES.map((e) => (
+      <Cols kind="aside-main">
+        <Stack className="min-w-0">
+          <Sheet no="A · Examples" title="Start from one" tone="library" flush>
+            <ul className="pb-2">
+              {EXAMPLES.map((e, i) => (
                 <li key={e.label}>
                   <button
                     type="button"
-                    className={cn(
-                      "w-full rounded-inner px-2 py-1.5 text-left text-caption transition-colors hover:bg-accent",
-                      query === e.query ? "text-ink-strong" : "text-ink-muted",
-                    )}
+                    className="gt-row w-full grid-cols-[28px_minmax(0,1fr)] text-left"
+                    data-on={query === e.query || undefined}
+                    data-hover-mark
                     aria-pressed={query === e.query}
                     onClick={() => setQuery(e.query)}
                   >
-                    {e.label}
+                    <span className="gt-row__no">{no2(i + 1)}</span>
+                    <span className="gt-row__name text-[13px]">{e.label}</span>
                   </button>
                 </li>
               ))}
             </ul>
-          </Panel>
-          <Panel title="Schema" bodyClassName="flex flex-col gap-3">
+          </Sheet>
+          <Sheet no="B · Schema" title="Labels" tone="fragment" bodyClassName="flex flex-col gap-4">
             <Labels title="Nodes" items={NODES} />
             <Labels title="Edges" items={EDGES} />
-          </Panel>
+          </Sheet>
         </Stack>
 
-        <Stack className="min-w-0 gap-4">
+        <Stack className="min-w-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               submit();
             }}
           >
-            <Panel title="Query" flush bodyClassName="p-2">
-              <Textarea
+            <Sheet no="00 · Query" title="Cypher" tone="commission">
+              <textarea
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -174,37 +151,39 @@ export default function CypherPage() {
                 }}
                 rows={7}
                 spellCheck={false}
-                className="resize-y border-0 bg-transparent font-mono text-code shadow-none focus-visible:ring-0"
+                className="gt-field w-full resize-y font-mono text-[13px] leading-relaxed"
                 aria-label="Cypher query"
               />
-              <div className="flex items-center gap-2 px-2 pt-1 pb-1">
-                <span className="text-micro text-ink-faint">
-                  <Kbd>{mod}</Kbd> <Kbd>Enter</Kbd> to run
+              <div className="mt-3 flex items-center gap-2">
+                <span className="flex items-center gap-1 text-[11px] text-ink-faint">
+                  <kbd className={KBD}>{mod}</kbd> <kbd className={KBD}>Enter</kbd> to run
                 </span>
-                <Button type="submit" size="sm" className="ml-auto" disabled={!query.trim() || run.loading}>
+                <Button type="submit" className="ml-auto" disabled={!query.trim() || run.loading}>
                   <Terminal className="size-4" aria-hidden /> {run.loading ? "Running…" : "Run"}
                 </Button>
               </div>
-            </Panel>
+            </Sheet>
           </form>
 
           {run.error ? (
             <ErrorNote error={run.error} />
           ) : run.loading && !d ? (
-            <Spinner label="Querying" />
+            <Measuring label="Querying" />
           ) : d ? (
-            <Panel
+            <Sheet
+              no="01 · Result"
               title={`${d.count} row${d.count === 1 ? "" : "s"}`}
               action={d.rows.length ? <CopyButton text={csv} label="Copy CSV" /> : null}
+              tone="library"
               flush
             >
               {d.rows.length ? (
-                <Scroller className="max-h-[560px] overflow-x-auto">
-                  <table className="w-full text-caption">
-                    <thead className="sticky top-0 z-10 bg-surface-raised text-left">
+                <div className="gt-scroll max-h-[560px] overflow-x-auto">
+                  <table className="w-full text-[12.5px]">
+                    <thead className="sticky top-0 z-10 bg-sheet-2 text-left">
                       <tr>
                         {cols.map((c) => (
-                          <th key={c} className="border-b border-line px-3 py-2 font-mono text-micro font-normal text-ink-muted">
+                          <th key={c} className="border-b border-line-loud px-3 py-2 font-mono text-[10px] font-normal tracking-[.12em] text-ink-dim uppercase">
                             {c}
                           </th>
                         ))}
@@ -212,11 +191,9 @@ export default function CypherPage() {
                     </thead>
                     <tbody className="font-mono">
                       {d.rows.map((r, i) => (
-                        <tr key={i} className="border-b border-line/60 last:border-0 hover:bg-accent">
+                        <tr key={i} className="border-b border-line-soft last:border-0 hover:bg-void-lift">
                           {cols.map((c) => (
-                            // `title` is right here and nowhere else: the cell is
-                            // truncated text, so the tooltip is the full value, not a
-                            // second description of a control.
+                            // The cell is truncated text, so the tooltip is the full value.
                             <td key={c} className="max-w-[420px] truncate px-3 py-1.5 text-ink" title={cell(r[c])}>
                               {cell(r[c])}
                             </td>
@@ -225,22 +202,18 @@ export default function CypherPage() {
                       ))}
                     </tbody>
                   </table>
-                </Scroller>
+                </div>
               ) : (
-                <p className="p-4 text-body-sm text-ink-muted">
-                  The query ran and matched nothing. That is an answer — check the labels in the schema panel if you
-                  expected rows.
+                <p className="px-[clamp(14px,2vw,24px)] pb-5 text-[13px] text-ink-dim">
+                  The query ran and matched nothing. That is an answer — check the labels in the schema sheet if you expected rows.
                 </p>
               )}
-            </Panel>
+            </Sheet>
           ) : (
-            <Empty title="Run a query" icon={<Database className="size-6" aria-hidden />}>
-              Every answer elsewhere in the app is one or more of these queries; the receipts on each page show how
-              many it took.
-            </Empty>
+            <Empty title="Run a query">Every answer elsewhere in the app is one or more of these queries; the receipts on each page show how many it took.</Empty>
           )}
         </Stack>
-      </Grid>
+      </Cols>
     </Page>
   );
 }

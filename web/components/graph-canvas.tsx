@@ -1,14 +1,11 @@
 "use client";
 
-import "@xyflow/react/dist/style.css";
-
 import {
   Background,
   BackgroundVariant,
   Controls,
   Handle,
   MarkerType,
-  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -17,8 +14,10 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
+import * as React from "react";
 import { memo, useEffect, useMemo, useState } from "react";
 
+import { Viewer } from "@/components/gt";
 import { symName } from "@/lib/format";
 import { useMedia } from "@/lib/hooks";
 import { layout, NODE_H, NODE_W, type XY } from "@/lib/layout";
@@ -47,37 +46,45 @@ export interface GEdge {
 
 type Data = GNode & { selected?: boolean };
 
+const H: React.CSSProperties[] = [
+  { left: -4, top: -4 },
+  { right: -4, top: -4 },
+  { right: -4, bottom: -4 },
+  { left: -4, bottom: -4 },
+];
+
+/** A node is a small spec card; the selected one wears the GROUNDTRUTH selection box. */
 const Card = memo(function Card({ data }: NodeProps<Node<Data>>) {
   return (
     <div
       className={cn(
-        "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-nested border bg-surface-overlay/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
-        data.emphasis ? "border-brand/60 shadow-[0_0_0_1px_var(--color-brand),0_0_24px_-6px_var(--color-brand)]" : "border-line hover:border-line-loud",
-        data.selected && "border-brand ring-2 ring-brand/50 ring-offset-2 ring-offset-ground",
+        "relative flex h-full w-full flex-col justify-center border bg-deep py-2 pr-3 pl-4 transition-colors",
+        data.selected ? "border-mark" : data.emphasis ? "border-mark/70" : "border-line-loud hover:border-ink-faint",
       )}
       style={{ width: NODE_W, height: NODE_H }}
       title={data.id}
     >
-      <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-line-loud" />
-      <span className={cn("absolute inset-y-0 left-0 w-1", data.tone ?? "bg-line-loud")} aria-hidden />
+      <Handle type="target" position={Position.Left} className="!size-1.5 !rounded-none !border-0 !bg-line-loud" />
+      <span className={cn("absolute inset-y-0 left-0 w-[3px]", data.tone ?? "bg-line-loud")} aria-hidden />
       <div className="flex items-center gap-2">
-        <span className="truncate font-mono text-code text-ink-strong">{symName(data.label)}</span>
-        {data.badge && <span className="ml-auto shrink-0 font-mono text-micro text-ink-muted">{data.badge}</span>}
+        <span className={cn("truncate font-mono text-[12.5px]", data.selected || data.emphasis ? "text-mark" : "text-ink")}>{symName(data.label)}</span>
+        {data.badge && <span className="ml-auto shrink-0 font-mono text-[10px] tracking-[.06em] text-ink-dim uppercase">{data.badge}</span>}
       </div>
-      {data.sub && <div className="mt-0.5 truncate font-mono text-micro text-ink-muted">{data.sub}</div>}
+      {data.sub && <div className="mt-0.5 truncate font-mono text-[10px] text-ink-faint">{data.sub}</div>}
       {data.value !== undefined && (
-        <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-line">
+        <div className="mt-1.5 h-[2px] bg-line">
           <div className={cn("h-full", data.tone ?? "bg-ink")} style={{ width: `${Math.max(3, data.value * 100)}%` }} />
         </div>
       )}
-      <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-line-loud" />
+      {data.selected && H.map((st, i) => <span key={i} className="absolute size-[7px] border border-mark bg-void" style={st} aria-hidden />)}
+      <Handle type="source" position={Position.Right} className="!size-1.5 !rounded-none !border-0 !bg-line-loud" />
     </div>
   );
 });
 
 const nodeTypes = { card: Card };
 
-function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
+function Inner({ nodes, edges, onSelect, selected, height, direction, hud }: Props) {
   const [pos, setPos] = useState<Record<string, XY>>({});
   const flow = useReactFlow();
   // on touch screens one finger scrolls the page (the canvas must not trap it); pinch and the buttons zoom and pan
@@ -116,17 +123,17 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
         label: e.label,
         type: "smoothstep",
         animated: false,
-        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#6b675c" },
-        style: { stroke: e.dashed ? "#6b675c" : "#9d998c", strokeWidth: e.weight ? 1 + Math.min(2, e.weight) : 1.2, strokeDasharray: e.dashed ? "4 4" : undefined },
-        labelStyle: { fill: "#9d998c", fontSize: 10, fontFamily: "var(--font-mono)" },
-        labelBgStyle: { fill: "#0a0a0a" },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#7d8280" },
+        style: { stroke: e.dashed ? "#7d8280" : "#a9adab", strokeWidth: e.weight ? 1 + Math.min(2, e.weight) : 1.2, strokeDasharray: e.dashed ? "4 4" : undefined },
+        labelStyle: { fill: "#c3c6c4", fontSize: 10, fontFamily: "var(--font-mono)" },
+        labelBgStyle: { fill: "#26292b" },
       })),
     [edges],
   );
 
   return (
-    <div className="relative overflow-hidden rounded-nested border border-line bg-ground" style={{ height }}>
-      {rfNodes.length === 0 && nodes.length > 0 && <div className="absolute inset-0 grid place-items-center text-body-sm text-ink-muted">Laying out…</div>}
+    <Viewer className="gt-flow overflow-hidden" style={{ height }} hud={hud} hint={<span>{touch ? "Pinch to zoom · tap a node" : "Drag to pan · scroll to zoom · click a node"}</span>}>
+      {rfNodes.length === 0 && nodes.length > 0 && <div className="absolute inset-0 grid place-items-center font-mono text-[11px] tracking-[.12em] text-ink-dim uppercase">Laying out…</div>}
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -141,15 +148,10 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
         colorMode="dark"
         fitView
       >
-        {touch && (
-          <Panel position="top-left" className="!m-2 rounded bg-base/90 px-2 py-1 text-micro text-ink-muted">
-            Pinch to zoom · tap a node
-          </Panel>
-        )}
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#26241f" />
-        <Controls showInteractive={false} className="!border-line !bg-base [&>button]:!border-line [&>button]:!bg-base [&>button]:!fill-ink-muted" />
+        <Background variant={BackgroundVariant.Lines} gap={48} size={1} color="rgba(255,255,255,0.045)" />
+        <Controls showInteractive={false} position="bottom-right" className="!mb-9 !mr-5" />
       </ReactFlow>
-    </div>
+    </Viewer>
   );
 }
 
@@ -160,6 +162,8 @@ interface Props {
   selected?: string;
   height?: number | string;
   direction?: "RIGHT" | "LEFT";
+  /** top-left readout inside the viewer, chartreuse mono */
+  hud?: React.ReactNode;
 }
 
 /** A laid-out, pannable graph of cards (elk layered). Used by impact, path, overview subsystems and explore. */

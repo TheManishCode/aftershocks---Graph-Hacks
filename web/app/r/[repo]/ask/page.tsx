@@ -3,49 +3,29 @@
 /**
  * Ask — plain-English questions, answered from the graph, with the work shown.
  *
- * Three decisions worth stating, because they are the difference between this
- * page and a generic chat window:
- *
- * 1. **The trace is part of the answer, not a debug panel.** Aftershock's whole
- *    claim is "here is the evidence"; the tool calls, their arguments and their
- *    receipts are that evidence. They render inline in a `Trace`, collapsed to
- *    one line each, and a step that errored opens itself — a failure the reader
- *    has to go looking for is a failure they will not find.
+ * 1. **The trace is part of the answer, not a debug panel.** The tool calls,
+ *    their arguments and their receipts are the evidence. They render inline,
+ *    one ruled line each, and a step that errored opens itself — a failure the
+ *    reader has to go looking for is a failure they will not find.
  *
  * 2. **Checkpoints rewind the conversation, not your code.** Aftershock only
- *    reads a repository; nothing on this page can change a file, so a "restore"
- *    that claimed to undo code changes would be a lie. What it restores is the
- *    thread: drop this turn and everything after it, and put the question back
- *    in the composer so you can re-ask it differently — against another model,
- *    or with different wording. The label says exactly that.
+ *    reads a repository, so "restore" drops this turn and everything after it
+ *    and puts the question back in the composer — nothing more is claimed.
  *
- * 3. **The model is chosen per question, next to the question.** It is a
- *    property of the ask, not a global setting, because comparing two models on
- *    the same question is the normal reason to change it. Keys live in Settings;
- *    this only picks from what is already callable.
+ * 3. **The model is chosen per question, next to the question.** Comparing two
+ *    models on the same question is the normal reason to change it. Keys live
+ *    in Settings; this only picks from what is already callable.
  */
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Bot, CircleAlert, Restore, Search, Send, Settings, Sparkles, Stop, Terminal } from "@/components/icons";
-import { ModelPicker, EFFORTS } from "@/components/ask/model-picker";
-import {
-  Callout,
-  Chip,
-  CodeBlock,
-  Eyebrow,
-  Mono,
-  Page,
-  PageHeader,
-  Panel,
-  Segmented,
-  Trace,
-  TraceLine,
-} from "@/components/ds";
+import { EFFORTS, ModelPicker } from "@/components/ask/model-picker";
+import { Callout, Chip, CodeBlock, Head, Mono, Page, Seg, Sheet, no2 } from "@/components/gt";
+import { Bot, ChevronDown, CircleAlert, Restore, Send, Settings, Sparkles, Stop, Terminal } from "@/components/icons";
+import { Receipts } from "@/components/kit";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, askStreamUrl, type Effort, type Receipts as R } from "@/lib/api";
 import { useQuery, useRepo } from "@/lib/hooks";
@@ -87,69 +67,72 @@ const SUGGEST = [
   "Which files change together most often?",
 ];
 
-/* -------------------------------------------------------------------------- */
-
 /** `{"symbol": "parse", "depth": 3}` → `symbol=parse depth=3` — scannable at a glance. */
 function args(input: Record<string, unknown>): string {
-  const parts = Object.entries(input)
+  return Object.entries(input)
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
-    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
-  return parts.join(" ");
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .join(" ");
 }
 
-function StepLine({ s }: { s: Step }) {
+function StepLine({ s, i }: { s: Step; i: number }) {
   const failed = Boolean(s.error);
+  const status = !s.done ? "running" : failed ? "error" : "done";
   return (
-    <TraceLine
-      status={!s.done ? "running" : failed ? "error" : "done"}
-      title={s.tool}
-      summary={s.done ? s.summary : args(s.input)}
-      receipts={s.receipts}
-      // A failed step opens itself: the reader should not have to guess which of
-      // eleven collapsed rows is the one that went wrong.
-      defaultOpen={failed}
-    >
-      <CodeBlock code={JSON.stringify(s.input, null, 2)} title="arguments" maxHeight={224} />
-      {s.summary && <p className="text-body-sm text-ink-muted">{s.summary}</p>}
-      {typeof s.error === "string" && <p className="text-body-sm text-fail">{s.error}</p>}
-    </TraceLine>
+    // A failed step opens itself: the reader should not have to guess which of
+    // eleven collapsed rows is the one that went wrong.
+    <details open={failed || undefined} className="group border-b border-line-soft last:border-0">
+      <summary className="grid cursor-pointer list-none grid-cols-[28px_10px_minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 hover:bg-void-lift [&::-webkit-details-marker]:hidden">
+        <span className="font-mono text-[10.5px] text-ink-faint">{no2(i + 1)}</span>
+        <span
+          className={cn("size-2", status === "running" ? "animate-blink bg-mark" : status === "error" ? "bg-fail" : "bg-pass")}
+          aria-label={status}
+          role="img"
+        />
+        <Mono className="text-[12.5px] text-ink">{s.tool}</Mono>
+        <span className="truncate font-mono text-[11px] text-ink-faint">{s.done ? s.summary : args(s.input)}</span>
+        <ChevronDown className="size-3.5 text-ink-faint transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="flex flex-col gap-2 px-3 pt-1 pb-3 pl-[52px]">
+        <CodeBlock code={JSON.stringify(s.input, null, 2)} title="arguments" maxHeight={224} />
+        {s.summary && <p className="text-[13px] text-ink-dim">{s.summary}</p>}
+        {typeof s.error === "string" && <p className="text-[13px] text-fail">{s.error}</p>}
+        {s.receipts && <Receipts r={s.receipts} />}
+      </div>
+    </details>
   );
 }
 
 function Provenance({ t }: { t: Turn }) {
-  if (!t.mode) {
+  if (!t.mode)
     return (
-      <span className="flex items-center gap-1.5 text-caption text-ink-faint">
+      <span className="flex items-center gap-1.5 text-[12.5px] text-ink-faint">
         <Sparkles className="size-3.5 animate-pulse" aria-hidden /> choosing a model…
       </span>
     );
-  }
-  if (t.mode === "claude") {
+  if (t.mode === "claude")
     return (
-      <span className="flex min-w-0 items-center gap-1.5 text-caption text-ink-muted">
-        <Sparkles className="size-3.5 shrink-0 text-brand" aria-hidden />
+      <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-dim">
+        <Sparkles className="size-3.5 shrink-0 text-mark" aria-hidden />
         <span className="truncate">
           {t.provider ? `${t.provider} · ` : ""}
           <Mono className="text-ink">{t.model}</Mono>
         </span>
       </span>
     );
-  }
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-caption text-ink-muted">
+    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-dim">
       <Terminal className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate">
-        Router{t.reason ? ` — ${t.reason}` : ""}
-      </span>
+      <span className="truncate">Router{t.reason ? ` — ${t.reason}` : ""}</span>
     </span>
   );
 }
 
-function TurnView({ t, onRestore, canRestore }: { t: Turn; onRestore: () => void; canRestore: boolean }) {
+function TurnView({ t, i, onRestore, canRestore }: { t: Turn; i: number; onRestore: () => void; canRestore: boolean }) {
   const failedSteps = t.steps.filter((s) => s.error).length;
   return (
-    <article className="as-in flex flex-col gap-2.5">
-      {/* The question. Right-aligned so a long thread reads as a conversation, not a log. */}
+    <article className="flex flex-col gap-3">
+      {/* The question, right-aligned so a long thread reads as a conversation, not a log. */}
       <div className="flex items-start justify-end gap-2">
         {canRestore && (
           <Tooltip>
@@ -158,82 +141,79 @@ function TurnView({ t, onRestore, canRestore }: { t: Turn; onRestore: () => void
                 variant="ghost"
                 size="sm"
                 onClick={onRestore}
-                className="mt-1 size-7 shrink-0 p-0 text-ink-faint hover:text-ink-strong"
+                className="mt-1 size-7 shrink-0 p-0 text-ink-faint hover:text-ink"
                 aria-label="Restore the thread to before this question"
               >
                 <Restore className="size-3.5" aria-hidden />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="left">
-              Rewind to here — drops this turn and everything after it, and puts the question back in the box. Your
-              files are untouched; Aftershock only reads them.
+              Rewind to here — drops this turn and everything after it, and puts the question back in the box. Your files are untouched; Aftershock only reads
+              them.
             </TooltipContent>
           </Tooltip>
         )}
-        <p className="w-fit max-w-[85%] rounded-nested rounded-br-sm border border-line-strong bg-surface-raised px-3.5 py-2 text-body-sm text-ink-strong">
-          {t.q}
-        </p>
+        <p className="w-fit max-w-[85%] border border-line-loud border-r-mark border-r-2 bg-slate px-4 py-2.5 text-[14px] text-ink">{t.q}</p>
       </div>
 
-      <Panel
-        bodyClassName="flex flex-col gap-3"
+      <Sheet
+        no={`${no2(i + 1)} · Answer`}
+        title={<Provenance t={t} />}
+        tone="library"
+        bodyClassName="flex flex-col gap-4"
         action={
-          <div className="flex items-center gap-2">
-            {failedSteps > 0 && (
-              <Chip tone="fail" size="sm">
-                {failedSteps} failed
-              </Chip>
-            )}
+          <>
+            {failedSteps > 0 && <Chip tone="fail">{failedSteps} failed</Chip>}
             {t.steps.length > 0 && (
-              <span className="font-mono text-micro text-ink-faint">
+              <span className="font-mono text-[11px] text-ink-faint">
                 {t.steps.length} {t.steps.length === 1 ? "step" : "steps"}
               </span>
             )}
-          </div>
+          </>
         }
-        title={<Provenance t={t} />}
       >
         {/* The asked-for model differed from the one that answered: say so, rather than
          *  letting a silent downgrade look like the model you picked did poorly. */}
         {t.mode === "router" && t.asked.model && (
-          <Callout tone="warn" icon={<CircleAlert className="text-warn" aria-hidden />}>
-            You picked <Mono>{t.asked.model}</Mono>, but the router answered{t.reason ? `: ${t.reason}` : ""}. The
-            answer is still from the graph — it just used one tool instead of reasoning over several.
+          <Callout tone="warn" icon={<CircleAlert aria-hidden />}>
+            You picked <Mono>{t.asked.model}</Mono>, but the router answered{t.reason ? `: ${t.reason}` : ""}. The answer is still from the graph — it just used one
+            tool instead of reasoning over several.
           </Callout>
         )}
 
         {t.steps.length > 0 && (
-          <Trace>
-            {t.steps.map((s, i) => (
-              <StepLine key={i} s={s} />
+          <div className="border border-line bg-deep" role="list" aria-label="Tool calls">
+            <div className="gt-label border-b border-line px-3 py-2">Trace</div>
+            {t.steps.map((s, j) => (
+              <div role="listitem" key={j}>
+                <StepLine s={s} i={j} />
+              </div>
             ))}
-          </Trace>
+          </div>
         )}
 
         {t.answer ? (
-          <div className="text-body-sm leading-relaxed text-ink">
+          <div className="text-[14px] leading-relaxed text-ink">
             <Markdown text={t.answer} />
           </div>
         ) : t.error ? (
-          <p className="flex items-start gap-2 text-body-sm text-fail">
+          <p className="flex items-start gap-2 text-[13.5px] text-fail">
             <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /> {t.error}
           </p>
         ) : t.stopped ? (
-          <p className="text-body-sm text-ink-muted">Stopped. The steps above did run — their receipts are real.</p>
+          <p className="text-[13.5px] text-ink-dim">Stopped. The steps above did run — their receipts are real.</p>
         ) : !t.done ? (
-          <p className="flex items-center gap-2 text-body-sm text-ink-muted">
-            <span className="size-1.5 animate-pulse rounded-full bg-brand" aria-hidden />
-            {t.steps.length === 0 ? "Querying the graph…" : "Writing the answer…"}
+          <p className="flex items-center gap-2 font-mono text-[12px] tracking-[.08em] text-ink-dim uppercase">
+            <span className="size-2 animate-blink bg-mark" aria-hidden />
+            {t.steps.length === 0 ? "Querying the graph" : "Writing the answer"}
           </p>
         ) : (
-          <p className="text-body-sm text-ink-muted">No answer came back.</p>
+          <p className="text-[13.5px] text-ink-dim">No answer came back.</p>
         )}
-      </Panel>
+      </Sheet>
     </article>
   );
 }
-
-/* -------------------------------------------------------------------------- */
 
 export default function AskPage() {
   const repo = useRepo();
@@ -251,10 +231,7 @@ export default function AskPage() {
   const serverDefault = prov.data?.default ?? null;
   const anyKey = providers.some((p) => p.configured && !p.keyless);
   // Effort only means something to a model that reasons; showing it otherwise is a dead control.
-  const reasons = useMemo(
-    () => providers.some((p) => p.models.some((m) => m.id === model && m.reasoning)),
-    [providers, model],
-  );
+  const reasons = useMemo(() => providers.some((p) => p.models.some((m) => m.id === model && m.reasoning)), [providers, model]);
 
   useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => {
@@ -262,10 +239,7 @@ export default function AskPage() {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns]);
 
-  const patch = useCallback(
-    (fn: (t: Turn) => Turn) => setTurns((ts) => (ts.length ? [...ts.slice(0, -1), fn(ts[ts.length - 1])] : ts)),
-    [],
-  );
+  const patch = useCallback((fn: (t: Turn) => Turn) => setTurns((ts) => (ts.length ? [...ts.slice(0, -1), fn(ts[ts.length - 1])] : ts)), []);
 
   const ask = async (question: string) => {
     question = question.trim();
@@ -278,8 +252,8 @@ export default function AskPage() {
     try {
       await postStream(
         askStreamUrl(repo),
-        // Omit the keys entirely rather than sending null: the server's default should
-        // apply because nothing was asked for, not because something asked for nothing.
+        // Omit the keys rather than sending null: the server's default should apply
+        // because nothing was asked for, not because something asked for nothing.
         { question, ...(model ? { model } : {}), ...(reasons ? { effort } : {}) },
         (event, raw) => {
           const d = (raw ?? {}) as Record<string, unknown>;
@@ -292,29 +266,20 @@ export default function AskPage() {
               reason: d.reason as string,
             }));
           else if (event === "tool")
-            patch((t) => ({
-              ...t,
-              steps: [...t.steps, { tool: String(d.name), input: (d.input as Record<string, unknown>) ?? {}, done: false }],
-            }));
+            patch((t) => ({ ...t, steps: [...t.steps, { tool: String(d.name), input: (d.input as Record<string, unknown>) ?? {}, done: false }] }));
           else if (event === "result")
             patch((t) => {
               const steps = [...t.steps];
               // results arrive in call order; fill the first open step for this tool
               const i = steps.findIndex((s) => !s.done && s.tool === d.tool);
-              const r = {
-                summary: d.summary as string,
-                error: d.error as string | boolean,
-                receipts: d.receipts as R,
-                done: true,
-              };
+              const r = { summary: d.summary as string, error: d.error as string | boolean, receipts: d.receipts as R, done: true };
               if (i >= 0) steps[i] = { ...steps[i], ...r };
               else steps.push({ tool: String(d.tool), input: (d.input as Record<string, unknown>) ?? {}, ...r });
               return { ...t, steps };
             });
           else if (event === "answer") patch((t) => ({ ...t, answer: String(d.text ?? "") }));
           else if (event === "error") patch((t) => ({ ...t, error: String(d.detail ?? "the agent failed") }));
-          else if (event === "end")
-            patch((t) => ({ ...t, done: true, steps: t.steps.map((s) => ({ ...s, done: true })) }));
+          else if (event === "end") patch((t) => ({ ...t, done: true, steps: t.steps.map((s) => ({ ...s, done: true })) }));
         },
         ac.signal,
       );
@@ -339,68 +304,57 @@ export default function AskPage() {
   };
 
   return (
-    <Page className="flex min-h-[calc(100svh-var(--topbar-h))] flex-col">
-      <PageHeader
-        eyebrow="Ask"
-        title="Ask the graph"
-        sub="Questions in English, answered from the indexed graph. Every tool call the agent made is listed with its arguments and what it cost, so you can check the answer instead of trusting it."
+    <Page className="flex min-h-[100svh] flex-col">
+      <Head
+        no="08 · Ask"
+        title={
+          <>
+            Ask the graph. <em>Check the work.</em>
+          </>
+        }
+        lead="Questions in English, answered from the indexed graph. Every tool call the agent made is listed with its arguments and what it cost, so you can check the answer instead of trusting it."
       />
 
       {!prov.loading && !anyKey && (
-        <Callout
-          tone="info"
-          icon={<Terminal className="text-info" aria-hidden />}
-          action={
-            <Button asChild size="sm" variant="outline">
-              <Link href="/settings/models">
-                <Settings className="size-3.5" aria-hidden /> Add a key
-              </Link>
-            </Button>
-          }
-          className="mb-4"
-        >
-          No model is configured, so questions go to the deterministic router: it matches your wording to one graph
-          tool and returns that tool&apos;s output. Accurate, but it will not combine several queries or reason about
-          what you meant.
+        <Callout tone="info" icon={<Terminal aria-hidden />} className="mb-6" title="No model configured">
+          Questions go to the deterministic router: it matches your wording to one graph tool and returns that tool&apos;s output. Accurate, but it will not combine
+          several queries or reason about what you meant.{" "}
+          <Link href="/settings/models" className="inline-flex items-center gap-1 text-mark underline-offset-4 hover:underline">
+            <Settings className="size-3.5" aria-hidden /> Add a key
+          </Link>
         </Callout>
       )}
 
-      <div className="flex flex-1 flex-col gap-5">
+      <div className="flex flex-1 flex-col gap-8">
         {turns.length === 0 ? (
-          <Panel title="Try one" bodyClassName="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {SUGGEST.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => ask(s)}
-                className={cn(
-                  "group flex items-start gap-2 rounded-control border border-line bg-base px-3 py-2.5 text-left",
-                  "transition-colors duration-[var(--dur-fast)] hover:border-brand/40 hover:bg-surface",
-                )}
-              >
-                <Search className="mt-0.5 size-3.5 shrink-0 text-ink-faint group-hover:text-brand" aria-hidden />
-                <span className="text-body-sm text-ink">{s}</span>
-              </button>
-            ))}
-          </Panel>
+          <Sheet no="00 · Start" title="Try one" tone="fragment" flush>
+            <ul className="grid pb-2 sm:grid-cols-2">
+              {SUGGEST.map((s, i) => (
+                <li key={s}>
+                  <button type="button" onClick={() => ask(s)} className="gt-row h-full w-full grid-cols-[28px_minmax(0,1fr)] text-left" data-hover-mark>
+                    <span className="gt-row__no">{no2(i + 1)}</span>
+                    <span className="gt-row__name text-[13.5px]">{s}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Sheet>
         ) : (
-          turns.map((t, i) => (
-            <TurnView key={i} t={t} onRestore={() => restore(i)} canRestore={!busy || i < turns.length - 1} />
-          ))
+          turns.map((t, i) => <TurnView key={i} t={t} i={i} onRestore={() => restore(i)} canRestore={!busy || i < turns.length - 1} />)
         )}
         <div ref={end} />
       </div>
 
       <form
-        className="sticky bottom-4 mt-5 rounded-nested border border-line-strong bg-base/95 shadow-[var(--shadow-pop)] backdrop-blur-xl"
+        className="sticky bottom-4 z-20 mt-8 border border-line-loud bg-sheet/95 backdrop-blur-xl"
         onSubmit={(e) => {
           e.preventDefault();
           ask(q);
         }}
       >
         <div className="flex items-end gap-2 p-2">
-          <Bot className="mb-2 ml-1 size-4 shrink-0 text-ink-faint" aria-hidden />
-          <Textarea
+          <Bot className="mb-2.5 ml-1 size-4 shrink-0 text-ink-faint" aria-hidden />
+          <textarea
             ref={box}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -412,7 +366,7 @@ export default function AskPage() {
             }}
             placeholder={`Ask about ${repo}…`}
             rows={1}
-            className="max-h-40 min-h-9 resize-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+            className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint"
             aria-label="Question"
           />
           {busy ? (
@@ -425,30 +379,16 @@ export default function AskPage() {
             </Button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-line px-2 py-1">
-          <ModelPicker
-            providers={providers}
-            serverDefault={serverDefault}
-            value={model}
-            onChange={setModel}
-            disabled={busy}
-          />
+        <div className="flex flex-wrap items-center gap-2 border-t border-line px-2 py-1.5">
+          <ModelPicker providers={providers} serverDefault={serverDefault} value={model} onChange={setModel} disabled={busy} />
           {reasons && (
             <>
               <span className="h-4 w-px bg-line" aria-hidden />
-              <Eyebrow className="text-ink-faint">Effort</Eyebrow>
-              <Segmented
-                label="Reasoning effort"
-                size="sm"
-                value={effort}
-                onChange={setEffort}
-                options={EFFORTS.map((e) => ({ value: e, label: e }))}
-              />
+              <span className="gt-label">Effort</span>
+              <Seg label="Reasoning effort" size="sm" value={effort} onChange={setEffort} options={EFFORTS.map((e) => ({ value: e, label: e }))} />
             </>
           )}
-          <span className="ml-auto hidden items-center gap-1 text-micro text-ink-faint sm:flex">
-            Enter to ask · Shift+Enter for a new line
-          </span>
+          <span className="ml-auto hidden font-mono text-[10.5px] text-ink-faint sm:inline">Enter to ask · Shift+Enter for a new line</span>
         </div>
       </form>
     </Page>

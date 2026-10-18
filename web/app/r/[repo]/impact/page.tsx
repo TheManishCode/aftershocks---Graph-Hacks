@@ -3,40 +3,25 @@
 /**
  * Impact: "I am about to change this — what breaks?"
  *
- * Two decisions shape this page.
- *
- * 1. **The URL is the state.** Targets, kind of change and depth all live in the
- *    query string, so an analysis can be pasted into a pull request or a chat and
- *    reproduce exactly. That is also why a shared link runs itself on arrival.
- *
- * 2. **The kind of change is a first-class control, not an advanced option.**
- *    Renaming a function and editing its body put wildly different things at risk,
- *    and a tool that silently assumes one of them is wrong half the time. Each
- *    option says in plain words what it means for the callers.
+ * 1. **The URL is the state.** Targets, kind of change and depth live in the
+ *    query string, so an analysis pasted into a PR reproduces exactly — and a
+ *    shared link runs itself on arrival.
+ * 2. **The kind of change is a first-class control.** Renaming a function and
+ *    editing its body put different things at risk; each option says in plain
+ *    words what it means for the callers.
  */
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import {
-  Empty,
-  ErrorNote,
-  Eyebrow,
-  Page,
-  PageHeader,
-  Panel,
-  Range,
-  Segmented,
-  Spinner,
-  Stack,
-} from "@/components/ds";
+import { Empty, ErrorNote, Head, Label, Measuring, Page, Range, Seg, Sheet, Stack } from "@/components/gt";
 import { Zap } from "@/components/icons";
 import { ImpactView } from "@/components/impact-view";
 import { repoHref } from "@/components/shell/nav";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { api, type Change } from "@/lib/api";
+import { num } from "@/lib/format";
 import { useAction, useRepo } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
@@ -69,56 +54,63 @@ export default function ImpactPage() {
 
   useEffect(() => {
     if (targets.length) go();
-    // Runs once per repository, to make a shared link self-executing. The other
-    // inputs are deliberately absent: re-running on every slider tick would fire
-    // a graph traversal per pixel.
+    // Once per repository, so a shared link runs itself. The other inputs are
+    // absent on purpose: a re-run per slider tick would be a traversal per pixel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo]);
 
   const hint = CHANGES.find((c) => c.value === change)?.hint;
+  const d = run.data && !run.data.error ? run.data : null;
 
   return (
     <Page>
-      <PageHeader
-        title="Impact"
-        sub="Name what you are about to change. Aftershock walks callers, subclasses and co-change partners, then ranks what is likely to break — each one with the chain that explains it."
+      <Head
+        no="02 · Impact"
+        title={
+          <>
+            What breaks <em>if I change this?</em>
+          </>
+        }
+        lead="Name what you are about to change. Aftershock walks callers, subclasses and co-change partners, then ranks what is likely to break — each with the chain that explains it."
+        meta={
+          d
+            ? [
+                { fig: String(d.risk.score), label: `risk · ${d.risk.level}` },
+                { fig: num(d.impacted.filter((x) => !x.is_test).length), label: "impacted symbols" },
+                { fig: num(d.tests.length), label: "tests to run" },
+              ]
+            : undefined
+        }
       />
 
-      <Stack className="gap-[var(--section-gap)]">
-        <form onSubmit={(e) => { e.preventDefault(); go(); }}>
-          <Panel title="What are you changing?" bodyClassName="flex flex-col gap-3">
-            <div>
-              <Label htmlFor="targets" className="mb-1.5 block">
-                <Eyebrow>Symbols or files</Eyebrow>
-              </Label>
-              <SymbolPicker id="targets" repo={repo} value={targets} onChange={setTargets} />
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-              <Segmented
-                label="Kind of change"
-                value={change}
-                onChange={setChange}
-                options={CHANGES.map(({ value, label, hint }) => ({ value, label, title: hint }))}
-              />
+      <Stack>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            go();
+          }}
+        >
+          <Sheet no="00 · Input" title="What are you changing?" tone="commission">
+            <Label htmlFor="targets">Symbols or files</Label>
+            <SymbolPicker id="targets" repo={repo} value={targets} onChange={setTargets} />
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <Seg label="Kind of change" value={change} onChange={setChange} options={CHANGES.map(({ value, label, hint }) => ({ value, label, title: hint }))} />
               <Range label="Depth" value={depth} onChange={setDepth} format={(n) => `${n} hops`} />
-              {/* The hint is the same text as the active option's tooltip, shown
-                  outright where there is room: a tooltip nobody hovers is not an
-                  explanation. */}
-              <span className="hidden text-caption text-ink-faint md:inline">{hint}</span>
+              {/* The active option's tooltip, shown outright: a tooltip nobody hovers explains nothing. */}
+              <span className="hidden text-[12.5px] text-ink-faint md:inline">{hint}</span>
               <Button type="submit" className="ml-auto" disabled={!targets.length || run.loading}>
                 <Zap className="size-4" aria-hidden /> {run.loading ? "Tracing…" : "Trace impact"}
               </Button>
             </div>
-          </Panel>
+          </Sheet>
         </form>
 
         {run.error ? (
           <ErrorNote error={run.error} />
         ) : run.loading && !run.data ? (
-          <Spinner label="Walking the graph" />
+          <Measuring label="Walking the graph" />
         ) : run.data ? (
-          // Dimmed, not replaced: a re-run with a new depth should let you compare
-          // against what is already on screen rather than blanking it first.
+          // Dimmed, not replaced: a re-run at a new depth compares against what is on screen.
           <div className={cn(run.loading && "opacity-60 transition-opacity")}>
             <ImpactView
               repo={repo}
@@ -132,9 +124,8 @@ export default function ImpactPage() {
             />
           </div>
         ) : (
-          <Empty title="Choose a change to trace" icon={<Zap className="size-6" aria-hidden />}>
-            Search by name, paste a <code className="font-mono text-ink-strong">path::Qualified.name</code>, or pick a
-            file to trace every symbol in it.
+          <Empty title="Choose a change to trace">
+            Search by name, paste a <code className="font-mono text-ink">path::Qualified.name</code>, or pick a file to trace every symbol in it.
           </Empty>
         )}
       </Stack>

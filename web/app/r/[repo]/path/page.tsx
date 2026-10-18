@@ -3,38 +3,25 @@
 /**
  * Path: why does one thing depend on another?
  *
- * The answer is a chain, so it renders as a numbered timeline rather than a
- * table — each row is a hop, and the rail down the left is the claim that these
- * steps are one continuous argument. Every step carries the file and line that
- * creates the edge, how it was resolved, and how sure the resolver was, because
- * a dependency chain with no provenance is just an assertion.
+ * The answer is a chain, so it renders as numbered hops on a rail — the rail is
+ * the claim that these steps are one continuous argument. Every hop carries the
+ * file and line that creates the edge, how it was resolved, and how sure the
+ * resolver was: a dependency chain with no provenance is just an assertion.
  *
- * Confidence uses the pass/warn/fail colours rather than the severity ramp:
- * a low-confidence edge is a weak claim, not a dangerous one.
+ * Confidence uses pass/warn/fail rather than the severity ramp: a
+ * low-confidence edge is a weak claim, not a dangerous one.
  */
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import {
-  Chip,
-  Empty,
-  ErrorNote,
-  Eyebrow,
-  Meter,
-  Mono,
-  Page,
-  PageHeader,
-  Panel,
-  Spinner,
-  Stack,
-} from "@/components/ds";
+import { Chip, Empty, ErrorNote, Head, Label, Measuring, Meter, Mono, Page, Sheet, Stack, no2 } from "@/components/gt";
 import { ArrowRight, Flow } from "@/components/icons";
 import { ProblemList } from "@/components/impact-view";
 import { FileLink, Receipts, SymLink } from "@/components/kit";
+import { Enter } from "@/components/motion";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { api, type EdgeStep } from "@/lib/api";
 import { HOW, pct } from "@/lib/format";
 import { useAction, useRepo } from "@/lib/hooks";
@@ -52,31 +39,23 @@ const VERB: Record<string, string> = {
 
 const confTone = (c: number) => (c >= 0.85 ? "bg-pass" : c >= 0.6 ? "bg-warn" : "bg-fail");
 
-function Step({ repo, s, i }: { repo: string; s: EdgeStep; i: number }) {
+function Hop({ repo, s, i }: { repo: string; s: EdgeStep; i: number }) {
   return (
-    <li className="relative pl-10">
-      <Mono
-        className="absolute top-0 left-0 grid size-7 place-items-center rounded-full border border-line bg-surface text-micro text-ink-muted"
-        aria-hidden
-      >
-        {i + 1}
+    <li className="relative pl-12">
+      <Mono className="absolute top-0 left-0 grid h-7 w-9 place-items-center border border-line-loud bg-deep text-[11px] text-mark" aria-hidden>
+        {no2(i + 1)}
       </Mono>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <SymLink repo={repo} id={s.from.id} name={s.from.name} className="text-body-sm" />
-        <span className="text-caption text-ink-muted">{VERB[s.type] ?? s.type.toLowerCase()}</span>
-        <SymLink repo={repo} id={s.to.id} name={s.to.name} className="text-body-sm" />
+        <SymLink repo={repo} id={s.from.id} name={s.from.name} className="text-[14px]" />
+        <span className="font-mono text-[11px] tracking-[.08em] text-ink-dim uppercase">{VERB[s.type] ?? s.type.toLowerCase()}</span>
+        <SymLink repo={repo} id={s.to.id} name={s.to.name} className="text-[14px]" />
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-muted">
-        <FileLink repo={repo} path={s.from.file} line={s.lines?.[0] ?? s.from.line} className="text-micro" />
-        {s.how && <Mono className="rounded-full bg-accent px-1.5 py-0.5">{HOW[s.how] ?? s.how}</Mono>}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-dim">
+        <FileLink repo={repo} path={s.from.file} line={s.lines?.[0] ?? s.from.line} className="text-[11px]" />
+        {s.how && <Chip>{HOW[s.how] ?? s.how}</Chip>}
         {s.confidence !== undefined && (
           <span className="flex items-center gap-1.5">
-            <Meter
-              value={s.confidence}
-              className="w-14"
-              barClassName={confTone(s.confidence)}
-              label={`Resolution confidence ${pct(s.confidence)}`}
-            />
+            <Meter value={s.confidence} className="w-14" barClassName={confTone(s.confidence)} label={`Resolution confidence ${pct(s.confidence)}`} />
             <Mono>{pct(s.confidence)}</Mono>
           </span>
         )}
@@ -110,110 +89,119 @@ export default function PathPage() {
 
   return (
     <Page>
-      <PageHeader
-        title="Path"
-        sub="The shortest, most confident chain of resolved edges between two symbols — with the line of code that creates each hop."
+      <Head
+        no="05 · Path"
+        title={
+          <>
+            Why does this <em>depend on that?</em>
+          </>
+        }
+        lead="The shortest, most confident chain of resolved edges between two symbols — with the line of code that creates each hop."
+        meta={
+          d?.found
+            ? [
+                { fig: String(d.hops ?? d.files?.length ?? 0), label: d.level === "file" ? "file links" : "hops" },
+                ...(d.confidence !== undefined ? [{ fig: pct(d.confidence), label: "path confidence" }] : []),
+              ]
+            : undefined
+        }
       >
         {d && <Receipts r={d.receipts} />}
-      </PageHeader>
+      </Head>
 
-      <Stack className="gap-[var(--section-gap)]">
-        <form onSubmit={(e) => { e.preventDefault(); go(); }}>
-          <Panel title="Two ends" bodyClassName="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto] md:items-end">
-            <div className="min-w-0">
-              <Label htmlFor="src" className="mb-1.5 block">
-                <Eyebrow>From</Eyebrow>
-              </Label>
-              <SymbolPicker id="src" repo={repo} value={source} onChange={setSource} multiple={false} />
+      <Stack>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            go();
+          }}
+        >
+          <Sheet no="00 · Input" title="Two ends" tone="commission">
+            <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr_auto] md:items-end">
+              <div className="min-w-0">
+                <Label htmlFor="src">From</Label>
+                <SymbolPicker id="src" repo={repo} value={source} onChange={setSource} multiple={false} />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="size-9 self-end p-0 text-ink-dim"
+                onClick={() => {
+                  setSource(target);
+                  setTarget(source);
+                }}
+                // Direction matters to the answer, so swapping is a real analysis, not a cosmetic flip.
+                aria-label="Swap the two ends and search the other direction"
+              >
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+              <div className="min-w-0">
+                <Label htmlFor="dst">To</Label>
+                <SymbolPicker id="dst" repo={repo} value={target} onChange={setTarget} multiple={false} />
+              </div>
+              <Button type="submit" disabled={!source[0] || !target[0] || run.loading}>
+                <Flow className="size-4" aria-hidden /> {run.loading ? "Searching…" : "Explain"}
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mb-0.5 size-8 self-end p-0 text-ink-muted"
-              onClick={() => {
-                setSource(target);
-                setTarget(source);
-              }}
-              // Direction matters to the answer, so swapping is a real analysis, not a
-              // cosmetic flip. No title: the aria-label already names the control.
-              aria-label="Swap the two ends and search the other direction"
-            >
-              <ArrowRight className="size-4" aria-hidden />
-            </Button>
-            <div className="min-w-0">
-              <Label htmlFor="dst" className="mb-1.5 block">
-                <Eyebrow>To</Eyebrow>
-              </Label>
-              <SymbolPicker id="dst" repo={repo} value={target} onChange={setTarget} multiple={false} />
-            </div>
-            <Button type="submit" disabled={!source[0] || !target[0] || run.loading}>
-              <Flow className="size-4" aria-hidden /> {run.loading ? "Searching…" : "Explain"}
-            </Button>
-          </Panel>
+          </Sheet>
         </form>
 
         {run.error ? (
           <ErrorNote error={run.error} />
         ) : run.loading && !d ? (
-          <Spinner label="Searching paths" />
+          <Measuring label="Searching paths" />
         ) : d ? (
-          <Stack className={cn("gap-[var(--section-gap)]", run.loading && "opacity-60")}>
+          <Stack className={cn(run.loading && "opacity-60 transition-opacity")}>
             <ProblemList repo={repo} problems={d.problems} />
             {d.error && <ErrorNote error={d.error} />}
 
             {d.found && d.level === "file" && d.files ? (
               // The resolver fell back to imports. Saying so matters: a file-level link
               // does not prove any symbol here reaches any symbol there.
-              <Panel title="File-level link" note="No symbol-level chain was found; these files import one another.">
-                {d.summary && <p className="mb-3 text-body-sm text-ink">{d.summary}</p>}
+              <Sheet no="01 · Chain" title="File-level link" note="No symbol-level chain was found; these files import one another." tone="library">
+                {d.summary && <p className="mb-4 text-[14px] text-ink">{d.summary}</p>}
                 <ol className="flex flex-wrap items-center gap-2">
                   {d.files.map((f, i) => (
                     <li key={f} className="flex items-center gap-2">
-                      {i > 0 && <span className="text-caption text-ink-faint">imports →</span>}
-                      <FileLink
-                        repo={repo}
-                        path={f}
-                        className="rounded-control border border-line px-2 py-1 text-caption"
-                      />
+                      {i > 0 && <span className="font-mono text-[11px] text-ink-faint">imports →</span>}
+                      <FileLink repo={repo} path={f} className="border border-line-loud bg-deep px-2 py-1 text-[12px]" />
                     </li>
                   ))}
                 </ol>
-              </Panel>
+              </Sheet>
             ) : d.found ? (
-              <Panel
+              <Sheet
+                no="01 · Chain"
                 title={`${d.hops} hop${d.hops === 1 ? "" : "s"}`}
+                tone="library"
                 action={
-                  <div className="flex items-center gap-2">
+                  <>
                     {d.direction && <Chip>{d.direction}</Chip>}
                     {d.confidence !== undefined && (
-                      <Chip tone={d.confidence >= 0.85 ? "pass" : d.confidence >= 0.6 ? "warn" : "fail"}>
-                        path confidence {pct(d.confidence)}
-                      </Chip>
+                      <Chip tone={d.confidence >= 0.85 ? "pass" : d.confidence >= 0.6 ? "warn" : "fail"}>path confidence {pct(d.confidence)}</Chip>
                     )}
-                  </div>
+                  </>
                 }
               >
-                {d.summary && <p className="mb-5 text-body-sm text-ink">{d.summary}</p>}
-                <ol className="relative space-y-5 before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-line">
+                {d.summary && <p className="mb-6 max-w-[80ch] text-[14px] leading-relaxed text-ink">{d.summary}</p>}
+                <Enter
+                  as="ol"
+                  className="relative space-y-6 before:absolute before:top-3 before:bottom-3 before:left-[17px] before:w-px before:bg-line-loud"
+                >
                   {d.steps.map((s, i) => (
-                    <Step key={`${s.from.id}->${s.to.id}:${i}`} repo={repo} s={s} i={i} />
+                    <Hop key={`${s.from.id}->${s.to.id}:${i}`} repo={repo} s={s} i={i} />
                   ))}
-                </ol>
-              </Panel>
+                </Enter>
+              </Sheet>
             ) : (
               !d.problems?.length &&
-              !d.error && (
-                <Empty title="No dependency path">
-                  {d.summary ?? "Nothing links these within the depth limit, in either direction."}
-                </Empty>
-              )
+              !d.error && <Empty title="No dependency path">{d.summary ?? "Nothing links these within the depth limit, in either direction."}</Empty>
             )}
           </Stack>
         ) : (
-          <Empty title="Pick two ends" icon={<Flow className="size-6" aria-hidden />}>
-            For example a test and the function it is supposed to cover, or an API handler and the database helper you
-            suspect it reaches.
+          <Empty title="Pick two ends">
+            For example a test and the function it is supposed to cover, or an API handler and the database helper you suspect it reaches.
           </Empty>
         )}
       </Stack>
