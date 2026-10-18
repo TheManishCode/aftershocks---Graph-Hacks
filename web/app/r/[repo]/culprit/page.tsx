@@ -35,6 +35,7 @@ import {
   Mono,
   Page,
   Sheet,
+  Skeleton,
   Stack,
   Steps,
   type Step as GtStep,
@@ -57,8 +58,19 @@ export default function CulpritPage() {
   const repo = useRepo();
   const run = useSearchParams().get("run");
   const history = useQuery(`runs:${repo}`, () => api.runs(repo, 15));
-  return run ? (
-    <RunView repo={repo} id={run} history={history} />
+  // Without `?run=`, open the newest failing run: its suspects are the answer people come here for.
+  // `?manual=1` keeps the hand-entry form.
+  const manual = useSearchParams().get("manual") === "1";
+  const latest = !run && !manual ? history.data?.runs.find((r) => r.failed > 0) : undefined;
+  if (!run && !manual && history.loading && !history.data) {
+    return (
+      <Page>
+        <Skeleton className="h-64" />
+      </Page>
+    );
+  }
+  return run || latest ? (
+    <RunView repo={repo} id={run ?? latest!.id} history={history} latest={!run} />
   ) : (
     <Page>
       <Manual repo={repo} />
@@ -93,7 +105,7 @@ const OUTCOME: Record<string, string> = {
 
 const runHrefFor = (repo: string) => (x: string) => `/r/${encodeURIComponent(repo)}/culprit?run=${x}`;
 
-function RunView({ repo, id, history }: { repo: string; id: string; history: Query<{ runs: TestRunSummary[] }> }) {
+function RunView({ repo, id, history, latest = false }: { repo: string; id: string; history: Query<{ runs: TestRunSummary[] }>; latest?: boolean }) {
   const sp = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -176,6 +188,14 @@ function RunView({ repo, id, history }: { repo: string; id: string; history: Que
       >
         {d?.culprits?.receipts && <Receipts r={d.culprits.receipts} />}
       </Head>
+      {latest && (
+        <p className="mb-4 text-[12.5px] text-ink-dim">
+          The newest failing run on {repo}.{" "}
+          <Link className="text-ink underline underline-offset-2" href={`/r/${encodeURIComponent(repo)}/culprit?manual=1`}>
+            Rank tests you name instead
+          </Link>
+        </p>
+      )}
 
       {detail.error ? (
         <ErrorNote error={detail.error} onRetry={detail.reload} />
@@ -232,7 +252,7 @@ function RunView({ repo, id, history }: { repo: string; id: string; history: Que
               <Sheet
                 no="03 · Suspects"
                 title={`Likely culprits · ${num(d.culprits.suspects.length)}`}
-                action={<Mono className="text-[11px] text-ink-faint">{d.culprits.method}</Mono>}
+                action={<Mono className="min-w-0 text-[11px] whitespace-normal text-ink-faint [overflow-wrap:anywhere]">{d.culprits.method}</Mono>}
                 note="Open a suspect for its chain — the hops from a failing test to it, as the graph resolved them. That chain and the source along it are what the model is given."
                 tone="library"
                 flush
@@ -581,7 +601,7 @@ function Manual({ repo }: { repo: string }) {
             <Sheet
               no="01 · Suspects"
               title={`Suspects · ${num(d.suspects.length)}`}
-              action={<Mono className="text-[11px] text-ink-faint">{d.method}</Mono>}
+              action={<Mono className="min-w-0 text-[11px] whitespace-normal text-ink-faint [overflow-wrap:anywhere]">{d.method}</Mono>}
               note={`${d.failing.length} failing test${d.failing.length === 1 ? "" : "s"}. Every other test that reaches a suspect counts as passing.`}
               tone="library"
               flush

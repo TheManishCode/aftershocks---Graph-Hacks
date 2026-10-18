@@ -141,8 +141,14 @@ server had no test interpreters. Decisions:
   whole showcase flow (index, demo edit, setup, `run --diff` with 7 failures and `Account.withdraw` ranked first,
   probes, `--tools ruff`) was run locally on a scratch copy of ledger.
 - **Not done:** `ai.unit-tests` was not run against a real model in this session (its pieces are tested; the model
-  call is not). The UI changes were type-checked and linted but not opened locally, because the other thread owns
-  `web/`'s dev server; they are checked on the deployed site.
+  call is not). The UI was not opened locally (the other thread owns `web/`'s dev server).
+- Live (2026-10-19): the VM runs `scripts/showcase.sh` output with `AFTERSHOCK_SHOWCASE_REPOS=ledger,flask`.
+  Playwright on aftershock.manishp.dev at 1440 and 390 px: ledger's Tests page shows the last test run (7 failed,
+  `Account.withdraw` first) and the last script run, plus Install/Set up; Culprit opens the newest failing run
+  (`?manual=1` keeps the hand form); no console errors, no horizontal overflow. Not clicked live: Run, Install all.
+- Fixed on the way: the root `.gitignore` `repos/` also ignored `testlab/repos/`, so clones had no fixtures
+  (now `/repos/`); `showcase.sh` copies as root and chowns, for a root-owned checkout; a long Sheet action (the
+  culprit method label) overflowed at phone width.
 
 ## Recommended next steps
 

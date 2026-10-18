@@ -138,7 +138,7 @@ export function Sheet({
               {title && <h2 className="gt-h2">{title}</h2>}
               {note && <p className="mt-1.5 max-w-[70ch] text-[13px] leading-relaxed text-ink-dim">{note}</p>}
             </div>
-            {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
+            {action && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{action}</div>}
           </div>
         )}
         <div

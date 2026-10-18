@@ -30,7 +30,7 @@ import { SuspectRow } from "@/components/suspect-row";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
 import { api, runStreamUrl, type RunDone, type RunMode, type RunSelected, type TestLibrary, type TestRow } from "@/lib/api";
-import { ms, num } from "@/lib/format";
+import { ms, num, relTime } from "@/lib/format";
 import { useAction, useQuery, useRepo } from "@/lib/hooks";
 import { postStream } from "@/lib/sse";
 import { cn } from "@/lib/utils";
@@ -279,6 +279,57 @@ function ResultRow({ repo, r, open, onToggle }: { repo: string; r: TestRow; open
 }
 
 /** Pass / fail / skip as one segmented bar; the unfilled rest is what is still to run. */
+/** The newest recorded run, shown until this visit starts one, so results never hide behind an empty state. */
+function LastRun({ repo, id }: { repo: string; id: string }) {
+  const d = useQuery(`run:${repo}:${id}`, () => api.runDetail(repo, id));
+  const [open, setOpen] = useState<string | null>(null);
+  if (d.loading && !d.data) return <Skeleton className="h-40" />;
+  if (d.error) return <ErrorNote error={d.error} onRetry={d.reload} />;
+  const r = d.data;
+  if (!r) return null;
+  return (
+    <Sheet no="02 · Last run" title={`${r.mode} run · ${relTime(r.started)}`} tone="fragment" action={<Chip tone={r.failed ? "fail" : "pass"}>exit {r.exit_code}</Chip>}>
+      <div className="mb-4 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+        <Figure label="Passed" value={num(r.passed)} tone={r.passed ? "text-pass" : undefined} />
+        <Figure label="Failed" value={num(r.failed)} tone={r.failed ? "text-fail" : undefined} />
+        <Figure label="Skipped" value={num(r.skipped)} />
+        <Figure label="Took" value={`${r.seconds.toFixed(1)}s`} />
+      </div>
+      {r.failures.length > 0 && (
+        <ul className="mb-4 flex flex-col gap-2 text-[12.5px]">
+          {r.failures.slice(0, 8).map((f) => (
+            <li key={f.nodeid} className="flex min-w-0 gap-2">
+              <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-fail" aria-hidden />
+              <div className="min-w-0">
+                <Mono className="block truncate text-ink" title={f.nodeid}>
+                  {f.nodeid.split("::").slice(1).join("::") || f.nodeid}
+                </Mono>
+                <span className="block truncate text-ink-dim">{f.nodeid.split("::")[0]} · {headline(f.message)}</span>
+              </div>
+            </li>
+          ))}
+          {r.failures.length > 8 && <li className="text-ink-faint">and {r.failures.length - 8} more</li>}
+        </ul>
+      )}
+      {r.culprits && r.culprits.suspects.length > 0 && (
+        <>
+          <Label className="mb-2 block">Most likely culprits</Label>
+          <ol className="mb-4 border-t border-line">
+            {r.culprits.suspects.slice(0, 3).map((s, i) => (
+              <SuspectRow key={s.id} repo={repo} s={s} rank={i + 1} open={open === s.id} onToggle={() => setOpen(open === s.id ? null : s.id)} />
+            ))}
+          </ol>
+        </>
+      )}
+      <Button asChild variant="outline">
+        <Link href={`/r/${encodeURIComponent(repo)}/culprit?run=${r.id}`}>
+          {r.failed ? "Investigate" : "Open run"} <ArrowRight className="size-4" />
+        </Link>
+      </Button>
+    </Sheet>
+  );
+}
+
 function Progress({ passed, failed, skipped, total, live }: { passed: number; failed: number; skipped: number; total: number; live: boolean }) {
   const of = Math.max(total, passed + failed + skipped, 1);
   const w = (n: number) => `${(100 * n) / of}%`;
@@ -542,7 +593,9 @@ export default function TestsPage() {
         {preview.error && <ErrorNote error={preview.error} onRetry={runPreview} />}
         {preview.data && !running && phase === "idle" && <SelectionPreview repo={repo} sel={preview.data} />}
 
-        {phase === "idle" && !preview.data && (
+        {phase === "idle" && !preview.data && history.data?.runs[0] && <LastRun repo={repo} id={history.data.runs[0].id} />}
+
+        {phase === "idle" && !preview.data && history.data && !history.data.runs.length && (
           <Empty title="Nothing has run yet">
             <em>Working tree</em> selects the tests your uncommitted changes reach — the same selection as <Mono className="text-ink">aftershock run {repo} --diff</Mono>.
             Preview it first if you only want to know what would run.

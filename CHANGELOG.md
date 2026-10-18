@@ -30,6 +30,11 @@ The public site refused every run, so nobody but the operator ever saw a result 
 - **Deployment:** the image gets `/data/envs` (test interpreters) and `/data/showcase`; `scripts/showcase.sh`
   provisions ledger (with an uncommitted demo edit, so the Tests page has a real failing diff) and seeds real runs.
 
+- **Results on arrival:** the Tests page shows the newest recorded run (counts, failures, top 3 culprits) instead
+  of "Nothing has run yet"; Culprit opens the newest failing run unless `?manual=1`.
+- **Fixed:** `testlab/repos/` fixtures were gitignored by the root `repos/` pattern (anchored to `/repos/`);
+  `showcase.sh` works on a root-owned checkout; Sheet actions no longer overflow at phone width.
+
 Tests: `tests/test_d29.py` (15): env scrubbing, requirement discovery, every library tool has a recipe (it caught
 `pip` missing), install refusals, the probes against synthetic repos with a planted order dependence and a planted
 cross-file dependence, runtime/showcase/proxy-header gating, showcase locks, the public 429, operator-only scripts,
