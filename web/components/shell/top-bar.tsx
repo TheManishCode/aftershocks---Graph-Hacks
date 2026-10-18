@@ -13,7 +13,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { FileCode, Menu, Pulse, Search, X } from "@/components/icons";
+import { FileCode, Menu, Pulse, Search, Settings, X } from "@/components/icons";
 import { Kbd } from "@/components/ds/primitives";
 import { REPO_NAV, repoHref } from "@/components/shell/nav";
 import { Preferences } from "@/components/shell/preferences";
@@ -200,6 +200,33 @@ function CommandPalette() {
   );
 }
 
+/**
+ * Settings lives beside Appearance because both answer "how does this behave for me?".
+ * It is a link rather than a popover: provider keys are a task with its own page, not a
+ * two-click toggle, and a secret field inside a dismissable popover is a way to lose input.
+ */
+function SettingsLink() {
+  const pathname = usePathname();
+  const here = pathname.startsWith("/settings");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className={cn("size-8 p-0 text-ink-muted hover:text-ink-strong", here && "text-brand")}
+        >
+          <Link href="/settings/models" aria-label="Settings" aria-current={here ? "page" : undefined}>
+            <Settings className="size-4" aria-hidden />
+          </Link>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Settings</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function TopBar() {
   const pathname = usePathname();
   const repo = useRepo();
@@ -234,6 +261,7 @@ export function TopBar() {
         <div className="ml-auto flex items-center gap-1.5">
           <HealthDot />
           <CommandPalette />
+          <SettingsLink />
           <Preferences />
         </div>
       </div>

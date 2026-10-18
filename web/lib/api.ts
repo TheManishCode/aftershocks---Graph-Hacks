@@ -350,6 +350,12 @@ export interface ProviderStatus {
   models: ProviderModel[];
 }
 
+/** Writing or clearing a key acknowledges only; re-read `/providers` for the new state. */
+export interface ProviderAck {
+  ok: boolean;
+  provider: string;
+}
+
 export type RunMode = "diff" | "targets" | "all" | "coverage";
 
 export interface RunRequest {
@@ -552,9 +558,8 @@ export const api = {
    * variable instead. The key is written server-side at 0600 and is never returned by any route.
    */
   providerSetKey: (id: string, key: string) =>
-    request<{ providers: ProviderStatus[]; default: string | null }>("PUT", `/providers/${encodeURIComponent(id)}`, { key }),
-  providerClearKey: (id: string) =>
-    request<{ providers: ProviderStatus[]; default: string | null }>("DELETE", `/providers/${encodeURIComponent(id)}`),
+    request<ProviderAck>("PUT", `/providers/${encodeURIComponent(id)}`, { key }),
+  providerClearKey: (id: string) => request<ProviderAck>("DELETE", `/providers/${encodeURIComponent(id)}`),
 };
 
 export interface FileGraph {

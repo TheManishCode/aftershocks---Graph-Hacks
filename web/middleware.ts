@@ -14,13 +14,25 @@ function sameString(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** Settings has one section, so /settings is an alias for it. Done in middleware rather than with
+ *  `redirect()` in a page: the shell has already streamed by the time a page renders, so that path
+ *  degrades to a one-second <meta refresh> the visitor can see. Applied after the password check —
+ *  an unauthenticated visitor gets the challenge, not a tour of the routes. */
+function alias(req: NextRequest): NextResponse | undefined {
+  const { pathname } = req.nextUrl;
+  if (pathname === "/settings" || pathname === "/settings/") {
+    return NextResponse.redirect(new URL("/settings/models", req.url));
+  }
+  return undefined;
+}
+
 export function middleware(req: NextRequest) {
-  if (!PASSWORD) return NextResponse.next();
+  if (!PASSWORD) return alias(req) ?? NextResponse.next();
   const header = req.headers.get("authorization") ?? "";
   if (header.startsWith("Basic ")) {
     try {
       const decoded = atob(header.slice(6));
-      if (sameString(decoded.slice(decoded.indexOf(":") + 1), PASSWORD)) return NextResponse.next();
+      if (sameString(decoded.slice(decoded.indexOf(":") + 1), PASSWORD)) return alias(req) ?? NextResponse.next();
     } catch {
       /* malformed header: fall through to the challenge */
     }
