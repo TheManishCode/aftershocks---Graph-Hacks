@@ -21,25 +21,25 @@ export function githubToMarkdown(text: string): string {
 /** The model's answer as Markdown (GFM tables, lists, code). No raw HTML: react-markdown escapes it by default. */
 export function Markdown({ text }: { text: string }) {
   return (
-    <div className="space-y-2 text-sm leading-relaxed break-words [&_strong]:font-semibold [&_strong]:text-paper">
+    <div className="space-y-2 text-sm leading-relaxed break-words [&_strong]:font-semibold [&_strong]:text-ink-strong">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer noopener" className="text-signal underline-offset-2 hover:underline">
+            <a href={href} target="_blank" rel="noreferrer noopener" className="text-brand underline-offset-2 hover:underline">
               {children}
             </a>
           ),
           ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
-          h1: ({ children }) => <p className="font-semibold text-paper">{children}</p>,
-          h2: ({ children }) => <p className="font-semibold text-paper">{children}</p>,
-          h3: ({ children }) => <p className="font-semibold text-paper">{children}</p>,
+          h1: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
+          h2: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
+          h3: ({ children }) => <p className="font-semibold text-ink-strong">{children}</p>,
           code: ({ children, className }) =>
             className ? (
               <code className={className}>{children}</code>
             ) : (
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-paper">{children}</code>
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-ink-strong">{children}</code>
             ),
           pre: ({ children }) => <pre className="overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-xs">{children}</pre>,
           table: ({ children }) => (

@@ -21,9 +21,9 @@ export function RunList({ repo, runs, current }: { repo: string; runs: TestRunSu
               aria-current={current === r.id ? "true" : undefined}
               className={cn("flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/[0.03]", current === r.id && "bg-white/[0.05]")}
             >
-              {bad ? <CircleAlert className="size-3.5 shrink-0 text-coral-red" /> : <CircleCheck className="size-3.5 shrink-0 text-signal-teal" />}
-              <span className="w-[4.5rem] shrink-0 font-mono text-[11px] text-fog">{r.id.slice(-8)}</span>
-              <span className="min-w-0 flex-1 truncate text-[12.5px] text-mist">
+              {bad ? <CircleAlert className="size-3.5 shrink-0 text-fail" /> : <CircleCheck className="size-3.5 shrink-0 text-info" />}
+              <span className="w-[4.5rem] shrink-0 font-mono text-[11px] text-ink-muted">{r.id.slice(-8)}</span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">
                 {r.trigger === "heal" ? (
                   <span className="inline-flex items-center gap-1 text-brand">
                     <Bot className="size-3" /> heal {r.heal_step}
@@ -32,12 +32,12 @@ export function RunList({ repo, runs, current }: { repo: string; runs: TestRunSu
                 ) : (
                   r.mode
                 )}
-                {r.heal_suspect && <span className="font-mono text-fog"> · {r.heal_suspect.split("::").pop()}</span>}
+                {r.heal_suspect && <span className="font-mono text-ink-muted"> · {r.heal_suspect.split("::").pop()}</span>}
               </span>
               <span className="shrink-0 font-mono text-[11px]">
-                <span className={r.failed ? "text-coral-red" : "text-fog"}>{num(r.failed)}✗</span> <span className="text-fog">{num(r.passed)}✓</span>
+                <span className={r.failed ? "text-fail" : "text-ink-muted"}>{num(r.failed)}✗</span> <span className="text-ink-muted">{num(r.passed)}✓</span>
               </span>
-              <span className="w-16 shrink-0 text-right text-[11px] text-fog">{relTime(r.started)}</span>
+              <span className="w-16 shrink-0 text-right text-[11px] text-ink-muted">{relTime(r.started)}</span>
             </Link>
           </li>
         );

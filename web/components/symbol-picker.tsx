@@ -64,11 +64,11 @@ export function SymbolPicker({
             {value.map((v) => {
               const [file, qn] = splitId(v);
               return (
-                <span key={v} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-white/5 py-0.5 pr-1 pl-2 font-mono text-xs text-paper">
+                <span key={v} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-white/5 py-0.5 pr-1 pl-2 font-mono text-xs text-ink-strong">
                   <span className="truncate" title={v}>
                     {qn || file}
                   </span>
-                  <button type="button" className="rounded-sm p-0.5 text-fog hover:text-paper" onClick={() => remove(v)} aria-label={`Remove ${v}`}>
+                  <button type="button" className="rounded-sm p-0.5 text-ink-muted hover:text-ink-strong" onClick={() => remove(v)} aria-label={`Remove ${v}`}>
                     <X className="size-3" />
                   </button>
                 </span>
@@ -109,9 +109,9 @@ export function SymbolPicker({
               <CommandGroup heading="Symbols">
                 {syms.map((s) => (
                   <CommandItem key={s.id} value={s.id} onSelect={() => add(s.id)}>
-                    <Code className={cn("size-4", s.is_test ? "text-signal-teal" : "text-fog")} />
-                    <span className="truncate font-mono text-paper">{symName(s.qname)}</span>
-                    <span className="ml-auto truncate pl-3 font-mono text-[11px] text-fog">
+                    <Code className={cn("size-4", s.is_test ? "text-info" : "text-ink-muted")} />
+                    <span className="truncate font-mono text-ink-strong">{symName(s.qname)}</span>
+                    <span className="ml-auto truncate pl-3 font-mono text-[11px] text-ink-muted">
                       {s.kind} · {s.file}:{s.line}
                     </span>
                   </CommandItem>
@@ -122,8 +122,8 @@ export function SymbolPicker({
               <CommandGroup heading="Files">
                 {fs.map((f) => (
                   <CommandItem key={f.path} value={`file:${f.path}`} onSelect={() => add(f.path)}>
-                    <FileCode className="size-4 text-fog" />
-                    <span className="truncate font-mono text-mist">{f.path}</span>
+                    <FileCode className="size-4 text-ink-muted" />
+                    <span className="truncate font-mono text-ink">{f.path}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

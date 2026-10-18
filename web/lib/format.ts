@@ -47,27 +47,39 @@ export function hue(s: string): number {
 }
 export const tint = (s: string, alpha = 1) => `oklch(0.72 0.09 ${hue(s)} / ${alpha})`; // quiet hues: colour is for status
 
+/**
+ * Risk colour, by level and by culprit tier.
+ *
+ * These now read from the severity ramp (`sev-*`), which is the single source
+ * of risk colour in the product — previously `medium` was violet, which put a
+ * data value in the brand's colour and made a medium risk look like a link.
+ *
+ * Prefer `SEV_TEXT`/`SEV_BG` with `fromLevel`/`fromTier` from `@/components/ds`
+ * in new code; these two maps exist for the screens that still index by the
+ * API's own strings and will go when those are rebuilt.
+ */
 export const LEVEL_TEXT: Record<Level, string> = {
-  low: "text-pulse-green",
-  medium: "text-signal",
-  high: "text-ov-missed",
-  critical: "text-coral-red",
+  low: "text-sev-low",
+  medium: "text-sev-medium",
+  high: "text-sev-high",
+  critical: "text-sev-critical",
 };
 export const LEVEL_BG: Record<Level, string> = {
-  low: "bg-pulse-green",
-  medium: "bg-signal",
-  high: "bg-ov-missed",
-  critical: "bg-coral-red",
+  low: "bg-sev-low",
+  medium: "bg-sev-medium",
+  high: "bg-sev-high",
+  critical: "bg-sev-critical",
 };
+/** A culprit tier is a confidence, so it maps onto the top of the same ramp. */
 export const TIER_TEXT: Record<Tier, string> = {
-  definite: "text-coral-red",
-  likely: "text-ov-missed",
-  possible: "text-fog",
+  definite: "text-sev-critical",
+  likely: "text-sev-high",
+  possible: "text-sev-none",
 };
 export const TIER_BG: Record<Tier, string> = {
-  definite: "bg-coral-red",
-  likely: "bg-ov-missed",
-  possible: "bg-fog",
+  definite: "bg-sev-critical",
+  likely: "bg-sev-high",
+  possible: "bg-sev-none",
 };
 
 /** How an edge was resolved, in words (aftershock/ingest/resolve.py). */
