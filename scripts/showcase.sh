@@ -14,10 +14,12 @@ cd "$(dirname "$0")/.."
 api() { docker compose exec -T api "$@"; }
 
 echo "== ledger: copy, commit, index"
-api rm -rf /data/showcase/ledger /tmp/ledger-src
-# `docker cp` keeps the host's file owners; copying again inside makes the tree the api user's own
+root() { docker compose exec -T -u root api "$@"; }
+root rm -rf /data/showcase/ledger /tmp/ledger-src
+# `docker cp` keeps the host's file owners (root on a sudo checkout): hand the tree to the api user before using it
 docker compose cp testlab/repos/ledger api:/tmp/ledger-src
-api sh -c 'cp -r /tmp/ledger-src /data/showcase/ledger && rm -rf /tmp/ledger-src && cd /data/showcase/ledger && find . -name __pycache__ -prune -exec rm -rf {} + \
+root sh -c 'mv /tmp/ledger-src /data/showcase/ledger && chown -R aftershock /data/showcase/ledger'
+api sh -c 'cd /data/showcase/ledger && find . -name __pycache__ -prune -exec rm -rf {} + \
   && git init -q && git add -A \
   && git -c user.name=aftershock -c user.email=showcase@aftershock.invalid commit -qm "ledger showcase baseline"'
 api aftershock index /data/showcase/ledger --name ledger --full
