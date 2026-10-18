@@ -1,0 +1,44 @@
+{
+  "_doc": "Break-probability model for the impact simulator. Every number here is a prior, not a measurement: tune it with `aftershock eval` against your own history. p(dependent) = noisy-OR over parents of p(parent) * edge(type) * confidence(edge) * (transmit if parent is not a seed).",
+  "seed": {
+    "delete": 1.0,
+    "rename": 1.0,
+    "signature": 0.85,
+    "body": 0.35,
+    "added": 0.0
+  },
+  "edge": {
+    "CALLS": 1.0,
+    "INHERITS": 0.8,
+    "IMPLEMENTS": 0.7,
+    "OVERRIDES": 1.0,
+    "DISPATCH": 0.6
+  },
+  "override": {
+    "_doc": "Seed weight for a method overriding a changed base method, by change kind. A body change does not reach overrides (they replace the body); a signature change is checked against the override's own arity when the new arity is known.",
+    "delete": 0.6,
+    "rename": 0.85,
+    "signature": 0.85,
+    "body": 0.0,
+    "added": 0.0
+  },
+  "transmit": 0.5,
+  "arity_break": 0.98,
+  "arity_ok": 0.45,
+  "caller_also_changed": 0.5,
+  "min_p": 0.03,
+  "tiers": {
+    "definite": 0.9,
+    "likely": 0.5,
+    "possible": 0.0
+  },
+  "max_nodes": 2500,
+  "risk": {
+    "_doc": "score = 100 * (1 - exp(-x)); x = breadth*ln(1+expected breakages) + files*ln(1+non-test files) + centrality*seed_pagerank/max + untested*untested_ratio + definite*ln(1+definite)",
+    "breadth": 0.35,
+    "files": 0.2,
+    "centrality": 1.0,
+    "untested": 0.8,
+    "definite": 0.15
+  }
+}

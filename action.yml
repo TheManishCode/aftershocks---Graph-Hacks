@@ -1,0 +1,111 @@
+name: Aftershock
+description: Blast-radius review for pull requests. Diffs the PR against its merge-base in a code graph, comments what breaks and which tests to run, and can fail the check above a risk level.
+branding:
+  icon: activity
+  color: orange
+
+inputs:
+  base:
+    description: Base ref to diff against. Defaults to the PR's base branch.
+    default: ""
+  fail-on:
+    description: Fail the check at or above this risk level (low, medium, high, critical). Empty never fails.
+    default: ""
+  comment:
+    description: Post (or update) a PR comment with the report.
+    default: "true"
+  depth:
+    description: Max hops to follow from changed symbols.
+    default: ""
+  history:
+    description: Mine git history for co-change coupling and owners (needs full history, i.e. fetch-depth 0).
+    default: "true"
+  falkordb-image:
+    description: FalkorDB image used for the throwaway graph.
+    default: falkordb/falkordb:v4.22.1
+  github-token:
+    description: Token used to comment. Needs pull-requests write.
+    default: ${{ github.token }}
+
+outputs:
+  risk:
+    description: Risk score 0-100.
+    value: ${{ steps.run.outputs.risk }}
+  level:
+    description: Risk level.
+    value: ${{ steps.run.outputs.level }}
+  report:
+    description: Path to the markdown report.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Start FalkorDB
+      shell: bash
+      run: |
+        docker run -d --rm --name aftershock-falkordb -p 6379:6379 "${{ inputs.falkordb-image }}" >/dev/null
+        for _ in $(seq 60); do docker exec aftershock-falkordb redis-cli ping 2>/dev/null | grep -q PONG && exit 0; sleep 1; done
+        echo "::error::FalkorDB did not start"; exit 1
+
+    - name: Install Aftershock
+      shell: bash
+      run: pip install --quiet "${{ github.action_path }}"
+
+    - name: Analyze
+      id: run
+      shell: bash
+      env:
+        FALKORDB_URL: redis://localhost:6379
+        BASE: ${{ inputs.base || format('origin/{0}', github.base_ref || github.event.repository.default_branch) }}
+        LINK: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        out="$RUNNER_TEMP/aftershock"
+        mkdir -p "$out"
+        args=(ci --path . --base "$BASE" --out "$out/report.md" --json-out "$out/report.json" --link "$LINK" --quiet)
+        [ -n "${{ inputs.fail-on }}" ] && args+=(--fail-on "${{ inputs.fail-on }}")
+        [ -n "${{ inputs.depth }}" ] && args+=(--depth "${{ inputs.depth }}")
+        [ "${{ inputs.history }}" = "true" ] || args+=(--no-history)
+        set +e
+        aftershock "${args[@]}"
+        code=$?
+        set -e
+        echo "report=$out/report.md" >> "$GITHUB_OUTPUT"
+        if [ -f "$out/report.json" ]; then
+          python - "$out/report.json" >> "$GITHUB_OUTPUT" <<'PY'
+        import json, sys
+        r = (json.load(open(sys.argv[1])).get("impact") or {}).get("risk") or {}
+        print(f"risk={r.get('score', 0)}")
+        print(f"level={r.get('level', 'none')}")
+        PY
+          cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        echo "$code" > "$out/exit"
+
+    - name: Comment
+      if: inputs.comment == 'true' && github.event.pull_request.number
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPORT: ${{ steps.run.outputs.report }}
+      run: |
+        [ -f "$REPORT" ] || exit 0
+        # update our previous comment in place instead of stacking a new one per push
+        id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+             --jq '[.[] | select(.body | startswith("<!-- aftershock:report -->"))][0].id // empty')
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$REPORT" >/dev/null
+        else
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@"$REPORT" >/dev/null
+        fi
+
+    - name: Gate
+      shell: bash
+      run: |
+        docker rm -f aftershock-falkordb >/dev/null 2>&1 || true
+        exit "$(cat "$RUNNER_TEMP/aftershock/exit" 2>/dev/null || echo 1)"

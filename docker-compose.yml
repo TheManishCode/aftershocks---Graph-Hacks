@@ -1,0 +1,63 @@
+# Aftershock: FalkorDB + API + web. Host ports avoid the Epicenter stack (6380/8000/3001) and each other.
+#   docker compose up -d            # everything
+#   docker compose up -d falkordb   # just the graph, for local dev (`aftershock serve` / `pytest`)
+name: aftershock
+
+services:
+  falkordb:
+    image: falkordb/falkordb:${FALKORDB_TAG:-v4.22.1}
+    environment:
+      REDIS_ARGS: "--requirepass ${FALKORDB_PASSWORD:-aftershock} --appendonly yes"
+      FALKORDB_ARGS: "THREAD_COUNT 4 TIMEOUT_MAX 60000"
+    ports:  # loopback only: the graph has no business being reachable from the network
+      - "127.0.0.1:${FALKORDB_PORT:-6390}:6379"
+      - "127.0.0.1:${FALKORDB_BROWSER_PORT:-3012}:3000"
+    volumes:
+      - falkordb-data:/var/lib/falkordb/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${FALKORDB_PASSWORD:-aftershock}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: .
+    environment:
+      FALKORDB_URL: redis://:${FALKORDB_PASSWORD:-aftershock}@falkordb:6379
+      AFTERSHOCK_API_KEY: ${AFTERSHOCK_API_KEY:-}
+      AFTERSHOCK_REPO_ROOTS: /repos:/data/clones
+      AFTERSHOCK_WEB_ORIGIN: ${AFTERSHOCK_WEB_ORIGIN:-http://localhost:3101}
+      AFTERSHOCK_ALLOWED_HOSTS: ${AFTERSHOCK_ALLOWED_HOSTS:-api:8100}
+      AFTERSHOCK_CLONE_DIR: /data/clones
+      AFTERSHOCK_CACHE_DIR: /data/cache
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ${AFTERSHOCK_REPOS_DIR:-./repos}:/repos:ro
+      - clones:/data/clones
+      - cache:/data/cache
+    ports:  # set API_BIND=0.0.0.0 (with AFTERSHOCK_API_KEY) to reach /mcp and the CI endpoints from elsewhere
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8100}:8100"
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      # read per request by the server-side proxy; the key never reaches the browser
+      AFTERSHOCK_API_URL: http://api:8100
+      AFTERSHOCK_API_KEY: ${AFTERSHOCK_API_KEY:-}
+      AFTERSHOCK_WEB_PASSWORD: ${AFTERSHOCK_WEB_PASSWORD:-}
+    ports:  # set WEB_BIND=0.0.0.0 only together with AFTERSHOCK_WEB_PASSWORD, behind TLS
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3101}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  falkordb-data:
+  clones:
+  cache:

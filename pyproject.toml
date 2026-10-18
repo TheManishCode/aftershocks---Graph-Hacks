@@ -1,0 +1,53 @@
+[project]
+name = "aftershock"
+version = "0.1.0"
+description = "Change-impact analysis for codebases: what breaks if I change this, answered from a FalkorDB dependency graph."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "falkordb>=1.8,<2",
+    "redis>=5",
+    "tree-sitter>=0.26,<0.27",
+    "tree-sitter-language-pack>=1.22,<2",
+    "fastapi>=0.143",
+    "uvicorn[standard]>=0.54",
+    "pydantic>=2.14",
+    "pydantic-settings>=2.16",
+    "mcp>=2.3,<3",
+]
+
+[project.optional-dependencies]
+agent = ["anthropic>=1.15,<2"]
+dev = ["pytest>=9", "httpx>=0.28", "ruff>=0.17", "anthropic>=1.15,<2"]
+
+[project.scripts]
+aftershock = "aftershock.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aftershock"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "S", "FURB", "SIM"]
+ignore = [
+    "S101",  # assert in tests
+    "S603",  # subprocess with a fixed argv list is how git is invoked
+    "S607",  # `git` resolved from PATH on purpose
+    "SIM108",
+    "E501",  # lines are kept near 120 by hand; long Cypher and regex literals read better unbroken
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "BLE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["graph: needs a running FalkorDB (docker compose up -d falkordb)"]

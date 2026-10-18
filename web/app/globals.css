@@ -1,0 +1,238 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@xyflow/react/dist/style.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system: one palette from the landing page in (2026-10-17): black surfaces, warm cream type, hairline
+ * borders instead of shadows, weights 400–590, three radii (6 / 12 / pill), and one gold accent used only for the
+ * primary action, the active nav item and playheads. Status colours (red / green / amber / teal) keep their meaning.
+ * Page titles use the landing's Instrument Serif italic (--font-display).
+ */
+@theme {
+  /* raw palette (design_reference/tailwind_v4.md) */
+  --color-void: #050505;
+  --color-carbon: #0a0a0a;
+  --color-obsidian: #131210;
+  --color-graphite: #26241f; /* warm hairline */
+  --color-smoke: #3b382f;
+  --color-ash: #6b675c; /* decorative only */
+  --color-fog: #9d998c; /* muted text: 7:1 on void */
+  --color-mist: #dedbc8; /* = cream: body text */
+  --color-bone: #ebe8d8;
+  --color-paper: #f6f3e4; /* headings: warm white */
+  --color-cream: #dedbc8;
+  --color-gold: #e6c77d; /* the one accent (was acid lime) */
+  --color-pulse-green: #27a644;
+  --color-coral-red: #eb5757;
+  --color-signal-teal: #02b8cc;
+  --color-iris-violet: #6366f1;
+  --color-lavender: #8b5cf6;
+  /* links, citations, spotlight, "live": a pale gold, so the one action (gold) still stands out */
+  --color-signal: #d8c79c;
+
+  /* type scale */
+  --text-caption: 13px;
+  --text-caption--line-height: 1.2;
+  --text-body-sm: 15px;
+  --text-body-sm--line-height: 1.6;
+  --text-body-sm--letter-spacing: -0.011em;
+  --text-body-lg: 20px;
+  --text-body-lg--line-height: 1.33;
+  --text-body-lg--letter-spacing: -0.012em;
+  --text-subheading: 24px;
+  --text-subheading--line-height: 1.33;
+  --text-subheading--letter-spacing: -0.012em;
+  --text-heading-sm: 32px;
+  --text-heading-sm--line-height: 1.13;
+  --text-heading-sm--letter-spacing: -0.022em;
+
+  /* weights cap at 590 ("no bold 700+"): every font-semibold / font-bold in the markup follows */
+  --font-weight-medium: 510;
+  --font-weight-semibold: 590;
+  --font-weight-bold: 590;
+
+  /* elevation is hairlines, not drop shadows; xl is for floating layers only */
+  --shadow-subtle: rgb(35, 37, 42) 0px 0px 0px 1px inset;
+  --shadow-subtle-4: rgba(255, 255, 255, 0.03) 0px 0px 0px 1px inset, rgba(255, 255, 255, 0.04) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.6) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 4px 4px 0px;
+  --shadow-xl: rgba(8, 9, 10, 0.6) 0px 4px 32px 0px;
+  --shadow-cta: rgba(0, 0, 0, 0.01) 0px 5px 2px 0px, rgba(0, 0, 0, 0.04) 0px 3px 2px 0px, rgba(0, 0, 0, 0.07) 0px 1px 1px 0px, rgba(0, 0, 0, 0.08) 0px 0px 1px 0px;
+}
+
+@theme inline {
+  /* status + overlay colours (USER_FLOW Flow 1, LLD §7.8) on the token palette; amber is the one non-token hue,
+     kept because "predicted but quiet" (dashed amber) is the overlay's meaning */
+  --color-st-open: var(--color-fog);
+  --color-st-supported: var(--color-signal-teal);
+  --color-st-refuted: var(--color-coral-red);
+  --color-st-inconclusive: var(--color-fog);
+  --color-st-pruned: var(--color-fog);
+  --color-st-confirmed: var(--color-pulse-green);
+  --color-ov-matched: var(--color-pulse-green);
+  --color-ov-missed: #d9a33a;
+  --color-ov-unexplained: var(--color-coral-red);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-landing-serif);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  /* three radii: 6 (buttons, inputs), 12 (cards; never 16+), pill; 4 for badges */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+}
+
+/* The app is dark-only (<html class="dark">); :root mirrors it so nothing renders light by accident. */
+:root,
+.dark {
+  color-scheme: dark; /* native scrollbars, inputs and selects follow the theme */
+  --radius: 6px;
+  --background: #050505; /* void */
+  --foreground: #dedbc8; /* cream: body text; headings are paper */
+  --card: #0a0a0a; /* carbon */
+  --card-foreground: #dedbc8;
+  --popover: #131210; /* obsidian */
+  --popover-foreground: #dedbc8;
+  --primary: #e6c77d; /* gold: the one action per view */
+  --primary-foreground: #050505;
+  --secondary: #131210;
+  --secondary-foreground: #dedbc8;
+  --muted: #131210;
+  --muted-foreground: #9d998c; /* fog */
+  --accent: rgb(222 219 200 / 6%); /* the pill / ghost fill */
+  --accent-foreground: #f6f3e4;
+  --destructive: #eb5757;
+  --border: #26241f; /* warm graphite hairline */
+  --input: rgb(222 219 200 / 9%);
+  --ring: #dedbc8; /* focus: the edge brightens to cream */
+  --chart-1: #e6c77d;
+  --chart-2: #dedbc8;
+  --chart-3: #9d998c;
+  --chart-4: #6b675c;
+  --chart-5: #3b382f;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #dedbc8;
+  --sidebar-primary: #e6c77d;
+  --sidebar-primary-foreground: #050505;
+  --sidebar-accent: rgb(222 219 200 / 6%);
+  --sidebar-accent-foreground: #f6f3e4;
+  --sidebar-border: #26241f;
+  --sidebar-ring: #dedbc8;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* --- Epicenter --- */
+@layer base {
+  html { font-size: 15px; }
+  body {
+    letter-spacing: -0.011em;
+    font-feature-settings: "cv01" on, "ss03" on, "zero" on; /* Inter's alternates: the reference's identity */
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { color: var(--color-paper); }
+  /* page titles in the landing's serif italic; a class (font-mono, font-sans) on an h1 still wins */
+  h1 { letter-spacing: -0.005em; font-family: var(--font-display), Georgia, serif; font-style: italic; font-weight: 400; }
+  .font-mono, code, kbd { letter-spacing: -0.013em; font-feature-settings: "zero" on; }
+  ::selection { background: rgb(230 199 125 / 85%); color: #000; }
+  :focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
+}
+
+.bg-grid {
+  background-image: radial-gradient(rgb(222 219 200 / 5%) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* the winning path glows (canvas edges and nodes): a functional highlight, kept soft */
+@keyframes epi-glow {
+  0%, 100% { filter: drop-shadow(0 0 3px rgb(39 166 68 / 45%)); }
+  50% { filter: drop-shadow(0 0 9px rgb(39 166 68 / 75%)); }
+}
+.epi-glow { animation: epi-glow 2.4s ease-in-out infinite; }
+@keyframes epi-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+.epi-in { animation: epi-in 280ms ease-out backwards; } /* not `both`: a held opacity:1 would override the dim classes */
+@media (prefers-reduced-motion: reduce) { .epi-glow, .epi-in { animation: none; } }
+
+/* React Flow on void */
+.react-flow { --xy-background-color: transparent; --xy-edge-stroke: var(--color-smoke); --xy-minimap-background-color: var(--card);
+  --xy-controls-button-background-color: var(--card); --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border); --xy-controls-button-background-color-hover: var(--color-obsidian); }
+.react-flow__controls { box-shadow: var(--shadow-subtle); border-radius: 6px; overflow: hidden; }
+.react-flow__attribution { display: none; }
+
+/* range inputs (the lanes slicer) are playheads: a graphite hairline track, a gold thumb */
+input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 9999px; background: var(--color-graphite); }
+input[type="range"]::-moz-range-track { height: 3px; border-radius: 9999px; background: var(--color-graphite); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border: 0;
+  border-radius: 9999px; background: var(--color-gold); box-shadow: 0 0 0 3px rgb(230 199 125 / 18%); }
+input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 9999px; background: var(--color-gold); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--color-smoke) transparent; }
+
+/* --- Landing (/): the same tokens (cream, gold, void, carbon); pure black behind the hero --- */
+:root:has(.landing) { background: #000; }
+:root:has(.landing)::-webkit-scrollbar, :root:has(.landing) body::-webkit-scrollbar { width: 0px; height: 0px; }
+:root:has(.landing) { scrollbar-width: none; }
+
+.noise-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Landing text reveal (components/landing/reveal.tsx): words rise out of a blur, staggered by --i */
+.rv-w { display: inline-block; white-space: pre; }
+[data-reveal] .rv-w {
+  opacity: 0;
+  transform: translateY(0.45em);
+  filter: blur(10px);
+  transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1), filter 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 55ms);
+}
+[data-reveal="in"] .rv-w { opacity: 1; transform: none; filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] .rv-w { opacity: 1; transform: none; filter: none; transition: none; }
+}

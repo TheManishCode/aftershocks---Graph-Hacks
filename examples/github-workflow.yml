@@ -1,0 +1,20 @@
+# Copy into a repo's .github/workflows/ to get a blast-radius comment on every PR.
+name: aftershock
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  blast-radius:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the merge-base and history mining need real history
+      - uses: OWNER/aftershock@main # placeholder: the GitHub repo this action is published from
+        with:
+          fail-on: critical
