@@ -1,71 +1,144 @@
 "use client";
 
+/**
+ * The full answer to "what breaks if I change this".
+ *
+ * Shared by Impact and Diff, so it is the single densest surface in the
+ * product. Three rules hold it together.
+ *
+ * 1. **Risk is a claim, so it is shown with its components.** The gauge is the
+ *    headline; directly beneath it are the six numbers the score is computed
+ *    from. A score with no breakdown is a number to argue with, not evidence.
+ *
+ * 2. **Colour means exactly one thing here.** The severity ramp carries
+ *    likelihood — the risk level and the three tiers — and nothing else. Brand
+ *    violet marks the symbols *you* said you were changing, and teal marks a
+ *    test. The eye should be able to read the tier without reading the word,
+ *    but the word is always there too.
+ *
+ * 3. **Nothing is truncated silently.** Every list that caps says how many it
+ *    is hiding, because a capped list that looks complete is worse than no list.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 
 import Link from "next/link";
 
-import { AlertTriangle, ChevronDown, ChevronRight, GitDiff, Play, TestTube, Users } from "@/components/icons";
+import {
+  Chip,
+  Empty,
+  Eyebrow,
+  Grid,
+  Metric,
+  Mono,
+  Panel,
+  RiskGauge,
+  Scroller,
+  SEV_BG,
+  SEV_TEXT,
+  Segmented,
+  Stack,
+  fromLevel,
+  fromTier,
+} from "@/components/ds";
 import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
-import { CopyButton, Empty, FileLink, Meter, Receipts, Stat, SymLink, Tile } from "@/components/kit";
+import { AlertTriangle, ChevronDown, ChevronRight, GitDiff, Play, TestTube, Users } from "@/components/icons";
+import { CopyButton, FileLink, Meter, Receipts, SymLink } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import type { Impact, Impacted, Problem, Tier } from "@/lib/api";
-import { HOW, LEVEL_BG, LEVEL_TEXT, num, pct, pytestNode, relTime, splitId, symName, TIER_BG, TIER_TEXT } from "@/lib/format";
+import { HOW, num, pct, pytestNode, relTime, splitId, symName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const GRAPH_CAP = 60;
 const TIERS: Tier[] = ["definite", "likely", "possible"];
-const VERB: Record<string, string> = { CALLS: "calls", INHERITS: "inherits", IMPLEMENTS: "implements", OVERRIDES: "overrides", COCHANGE: "co-changes with", COVERS: "ran" };
+const VERB: Record<string, string> = {
+  CALLS: "calls",
+  INHERITS: "inherits",
+  IMPLEMENTS: "implements",
+  OVERRIDES: "overrides",
+  COCHANGE: "co-changes with",
+  COVERS: "ran",
+};
+
+const tierText = (t: Tier) => SEV_TEXT[fromTier(t)];
+const tierBg = (t: Tier) => SEV_BG[fromTier(t)];
 
 /** Why a symbol is impacted: the chain from the changed symbol, one resolved edge per step. */
 export function WhyChain({ repo, item }: { repo: string; item: Impacted }) {
   return (
-    <ol className="space-y-1.5 border-l border-graphite pl-3">
+    <ol className="space-y-1.5 border-l border-line pl-3">
       {item.path.map((s, i) => (
-        <li key={i} className="text-xs">
-          <SymLink repo={repo} id={s.to} className="text-[12px]" />{" "}
+        <li key={`${s.from}->${s.to}:${i}`} className="text-caption">
+          <SymLink repo={repo} id={s.to} className="text-caption" />{" "}
+          {/* A dispatch edge is two facts — a call, then a possible target — and
+              collapsing it to "calls" would overstate what the graph knows. */}
           {s.type === "DISPATCH" && s.via ? (
             <>
-              <span className="text-fog">calls </span>
-              <SymLink repo={repo} id={s.via} name={splitId(s.via)[1] || s.via} className="text-[12px] text-mist" />
-              <span className="text-fog">, which can dispatch to </span>
+              <span className="text-ink-muted">calls </span>
+              <SymLink repo={repo} id={s.via} name={splitId(s.via)[1] || s.via} className="text-caption text-ink" />
+              <span className="text-ink-muted">, which can dispatch to </span>
             </>
           ) : (
-            <span className="text-fog">{VERB[s.type] ?? s.type.toLowerCase()} </span>
+            <span className="text-ink-muted">{VERB[s.type] ?? s.type.toLowerCase()} </span>
           )}
-          <SymLink repo={repo} id={s.from} name={splitId(s.from)[1] || s.from} className="text-[12px] text-mist" />
-          <span className="ml-2 font-mono text-[10.5px] text-fog">
+          <SymLink repo={repo} id={s.from} name={splitId(s.from)[1] || s.from} className="text-caption text-ink" />
+          <Mono className="ml-2 text-micro text-ink-faint">
             {s.how ? (HOW[s.how] ?? s.how) : ""}
             {s.confidence !== undefined ? ` · ${pct(s.confidence)}` : ""}
             {s.file && s.lines?.length ? ` · ${s.file}:${s.lines[0]}` : ""}
-          </span>
-          {s.verdict && <span className="ml-2 rounded bg-ov-missed/10 px-1 text-[10.5px] text-ov-missed">{s.verdict}</span>}
+          </Mono>
+          {s.verdict && (
+            <Chip tone="warn" size="sm" className="ml-2">
+              {s.verdict}
+            </Chip>
+          )}
         </li>
       ))}
     </ol>
   );
 }
 
-export function ProblemList({ repo, problems, onPick }: { repo: string; problems?: Problem[]; onPick?: (ref: string, id: string) => void }) {
+/**
+ * Something the user named could not be resolved. This is a *warning*, not an
+ * error: the rest of the analysis still ran, and the candidate buttons are the
+ * fastest way to fix the input without retyping it.
+ */
+export function ProblemList({
+  repo,
+  problems,
+  onPick,
+}: {
+  repo: string;
+  problems?: Problem[];
+  onPick?: (ref: string, id: string) => void;
+}) {
   if (!problems?.length) return null;
   return (
     <div className="space-y-2">
       {problems.map((p) => (
-        <div key={p.ref} className="rounded-lg border border-ov-missed/30 bg-ov-missed/5 px-3 py-2.5 text-sm">
-          <div className="flex items-start gap-2 text-mist">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-ov-missed" aria-hidden />
+        <div key={p.ref} className="rounded-panel border border-warn/30 bg-warn/5 px-3 py-2.5 text-body-sm">
+          <div className="flex items-start gap-2 text-ink">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
             <span>
-              <code className="font-mono text-paper">{p.ref}</code>: {p.error}
+              <Mono className="text-ink-strong">{p.ref}</Mono>: {p.error}
             </span>
           </div>
           {p.candidates?.length ? (
             <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
               {p.candidates.slice(0, 10).map((c) =>
                 onPick ? (
-                  <Button key={c.id} variant="outline" size="sm" className="h-7 font-mono text-xs" onClick={() => onPick(p.ref, c.id)} title={c.id}>
-                    {symName(c.qname)} <span className="text-fog">{c.file}</span>
+                  <Button
+                    key={c.id}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 font-mono text-caption"
+                    onClick={() => onPick(p.ref, c.id)}
+                    aria-label={`Use ${c.qname} from ${c.file}`}
+                  >
+                    {symName(c.qname)} <span className="text-ink-faint">{c.file}</span>
                   </Button>
                 ) : (
-                  <SymLink key={c.id} repo={repo} id={c.id} className="text-xs" />
+                  <SymLink key={c.id} repo={repo} id={c.id} className="text-caption" />
                 ),
               )}
             </div>
@@ -76,11 +149,21 @@ export function ProblemList({ repo, problems, onPick }: { repo: string; problems
   );
 }
 
-function ImpactGraph({ repo, data, onSelect, selected }: { repo: string; data: Impact; onSelect: (id: string) => void; selected?: string }) {
+function ImpactGraph({
+  repo,
+  data,
+  onSelect,
+  selected,
+}: {
+  repo: string;
+  data: Impact;
+  onSelect: (id: string) => void;
+  selected?: string;
+}) {
   const { nodes, edges, hidden } = useMemo(() => {
     const top = [...data.impacted].sort((a, b) => b.p - a.p).slice(0, GRAPH_CAP);
     const keep = new Set<string>(data.seeds.filter((s) => s.found).map((s) => s.id));
-    // include every node on each kept item's chain, so no edge dangles
+    // Every node on a kept item's chain is kept too, so no edge dangles.
     for (const it of top) for (const st of it.path) keep.add(st.from).add(st.to);
     const byId = new Map(data.impacted.map((x) => [x.id, x]));
     const ns: GNode[] = [...keep].map((id) => {
@@ -91,7 +174,7 @@ function ImpactGraph({ repo, data, onSelect, selected }: { repo: string; data: I
         id,
         label: qn || file,
         sub: `${file}${it ? ` · hop ${it.hop}` : ""}`,
-        tone: seed ? "bg-brand" : it ? TIER_BG[it.tier] : "bg-smoke",
+        tone: seed ? "bg-brand" : it ? tierBg(it.tier) : "bg-line-loud",
         value: it?.p,
         badge: seed ? seed.change : it ? pct(it.p) : undefined,
         group: seed ? "0" : String(it?.hop ?? 9),
@@ -102,97 +185,145 @@ function ImpactGraph({ repo, data, onSelect, selected }: { repo: string; data: I
     for (const it of top)
       for (const st of it.path) {
         const k = `${st.from}>${st.to}`;
-        if (!es.has(k)) es.set(k, { src: st.from, dst: st.to, dashed: st.type !== "CALLS", label: st.type === "CALLS" ? undefined : st.type.toLowerCase() });
+        if (!es.has(k))
+          es.set(k, {
+            src: st.from,
+            dst: st.to,
+            dashed: st.type !== "CALLS",
+            label: st.type === "CALLS" ? undefined : st.type.toLowerCase(),
+          });
       }
     return { nodes: ns, edges: [...es.values()], hidden: Math.max(0, data.impacted.length - top.length) };
   }, [data]);
+
   return (
     <div>
       <GraphCanvas nodes={nodes} edges={edges} onSelect={onSelect} selected={selected} height={460} />
       <Selection repo={repo} data={data} id={selected} />
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fog">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-ink-muted">
         <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-brand" /> changed
+          <span className="size-2 rounded-[2px] bg-brand" aria-hidden /> changed
         </span>
         {TIERS.map((t) => (
           <span key={t} className="flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-sm", TIER_BG[t])} /> {t}
+            <span className={cn("size-2 rounded-[2px]", tierBg(t))} aria-hidden /> {t}
           </span>
         ))}
-        <span>arrows run from the change to what depends on it · dashed (labelled) = inheritance, override, dispatch or co-change</span>
-        {hidden > 0 && <span className="ml-auto">showing the {GRAPH_CAP} most likely of {data.impacted.length}</span>}
+        <span>
+          arrows run from the change to what depends on it · dashed (labelled) = inheritance, override, dispatch or
+          co-change
+        </span>
+        {hidden > 0 && (
+          <span className="ml-auto">
+            showing the {GRAPH_CAP} most likely of {num(data.impacted.length)}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 function ImpactRow({ repo, it, open, onToggle }: { repo: string; it: Impacted; open: boolean; onToggle: () => void }) {
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <li data-row={it.id} className={cn("scroll-mt-20 rounded-lg border border-transparent", open && "border-brand/40 bg-white/[0.02]")}>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.03]" aria-expanded={open}>
-        {open ? <ChevronDown className="size-3.5 shrink-0 text-fog" /> : <ChevronRight className="size-3.5 shrink-0 text-fog" />}
-        <span className={cn("w-16 shrink-0 font-mono text-[11px]", TIER_TEXT[it.tier])}>{it.tier}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-paper">
+    <li
+      data-row={it.id}
+      className={cn("scroll-mt-20 rounded-panel border border-transparent", open && "border-brand/40 bg-surface-raised")}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 rounded-panel px-2 py-1.5 text-left hover:bg-accent"
+        aria-expanded={open}
+      >
+        <Chevron className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
+        <Mono className={cn("w-16 shrink-0 text-micro", tierText(it.tier))}>{it.tier}</Mono>
+        <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink-strong">
           {it.name}
-          {it.is_test && <TestTube className="ml-1.5 inline size-3.5 text-signal-teal" aria-label="test" />}
+          {it.is_test && <TestTube className="ml-1.5 inline size-3.5 text-info" aria-label="test" />}
         </span>
-        <span className="hidden truncate font-mono text-[11px] text-fog md:block md:max-w-[38%]">
+        <Mono className="hidden truncate text-micro text-ink-faint md:block md:max-w-[38%]">
           {it.file}:{it.line}
-        </span>
-        <span className="w-10 shrink-0 text-right font-mono text-[11px] text-fog">h{it.hop}</span>
+        </Mono>
+        <Mono className="w-10 shrink-0 text-right text-micro text-ink-faint">h{it.hop}</Mono>
         <span className="w-20 shrink-0">
-          <span className="block text-right font-mono text-[11px] text-mist">{pct(it.p)}</span>
-          <Meter value={it.p} barClassName={TIER_BG[it.tier]} />
+          <Mono className="block text-right text-micro text-ink">{pct(it.p)}</Mono>
+          <Meter value={it.p} barClassName={tierBg(it.tier)} />
         </span>
       </button>
       {open && (
         <div className="px-8 pt-1 pb-3">
           <WhyChain repo={repo} item={it} />
-          {(it.via ?? 1) > 1 && <p className="mt-2 text-[11px] text-fog">Reached by {it.via} independent paths; the most likely is shown.</p>}
+          {(it.via ?? 1) > 1 && (
+            <p className="mt-2 text-micro text-ink-muted">
+              Reached by {it.via} independent paths; the most likely is shown.
+            </p>
+          )}
         </div>
       )}
     </li>
   );
 }
 
-/** What the clicked node is, right under the graph, so a click always answers in place (the row below may be off screen). */
+/**
+ * What the clicked node is, directly under the graph.
+ *
+ * The matching row in the list below is often off screen, so a click that only
+ * scrolled somewhere else would feel like nothing happened. This answers in
+ * place, and `aria-live` means it answers for a screen reader too.
+ */
 function Selection({ repo, data, id }: { repo: string; data: Impact; id?: string }) {
-  if (!id) return <p className="mt-2 text-[11px] text-fog">Click a node to see why it is impacted.</p>;
+  if (!id) return <p className="mt-2 text-micro text-ink-faint">Click a node to see why it is impacted.</p>;
   const it = data.impacted.find((x) => x.id === id);
   const seed = data.seeds.find((s) => s.id === id);
   const step = it?.path[0]; // paths run from the impacted symbol toward the change
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-brand/40 bg-brand/[0.04] px-3 py-2 text-xs" aria-live="polite">
-      <SymLink repo={repo} id={id} name={symName(splitId(id)[1] || id)} className="font-mono text-[13px]" />
+    <div
+      className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-brand/40 bg-brand/[0.04] px-3 py-2 text-caption"
+      aria-live="polite"
+    >
+      <SymLink repo={repo} id={id} name={symName(splitId(id)[1] || id)} className="font-mono text-body-sm" />
       {seed ? (
         <span className="text-brand">changed · {seed.change}</span>
       ) : it ? (
         <>
-          <span className={TIER_TEXT[it.tier]}>
+          <span className={tierText(it.tier)}>
             {it.tier} · {pct(it.p)}
           </span>
-          <span className="text-fog">
+          <span className="text-ink-muted">
             hop {it.hop}
             {step && ` · ${VERB[step.type] ?? step.type.toLowerCase()} ${symName(splitId(step.to)[1] || step.to)}`}
           </span>
-          {it.verdict && <span className="text-paper">{it.verdict}</span>}
+          {it.verdict && <span className="text-ink-strong">{it.verdict}</span>}
         </>
       ) : (
-        <span className="text-fog">on the path between the change and an impacted symbol</span>
+        <span className="text-ink-muted">on the path between the change and an impacted symbol</span>
       )}
     </div>
   );
 }
 
-/** The full answer to "what breaks if I change this": risk, graph, ranked list with why-chains, tests, files, people. */
-/** `runHref`: the Tests page link that runs exactly this selection (D18). */
-export function ImpactView({ repo, data, onPick, runHref }: { repo: string; data: Impact; onPick?: (ref: string, id: string) => void; runHref?: string }) {
+/** `runHref`: the Tests page link that runs exactly this selection. */
+export function ImpactView({
+  repo,
+  data,
+  onPick,
+  runHref,
+}: {
+  repo: string;
+  data: Impact;
+  onPick?: (ref: string, id: string) => void;
+  runHref?: string;
+}) {
   const [tier, setTier] = useState<Tier | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
   const [limit, setLimit] = useState(40);
   const [jump, setJump] = useState<string | null>(null);
   const list = data.impacted.filter((x) => !x.is_test && (tier === "all" || x.tier === tier));
-  // a graph click opens that symbol's row: widen the filter and page size if needed, then bring the row into view
+
+  // A graph click opens that symbol's row: widen the filter and the page size if
+  // the row is currently hidden, then bring it into view. Clicking a node and
+  // landing on nothing is the failure this avoids.
   const pick = (id: string) => {
     setOpen(id);
     const it = data.impacted.find((x) => x.id === id);
@@ -207,25 +338,22 @@ export function ImpactView({ repo, data, onPick, runHref }: { repo: string; data
     document.querySelector(`[data-row="${CSS.escape(jump)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     setJump(null);
   }, [jump]);
+
   const level = data.risk.level;
+  const sev = fromLevel(level);
   const c = data.risk.components;
 
   if (data.error) return <ProblemList repo={repo} problems={[{ ref: "", error: data.error }]} />;
 
   return (
-    <div className="space-y-4">
+    <Stack className="gap-4">
       <ProblemList repo={repo} problems={data.problems} onPick={onPick} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-        <Tile title="Risk" action={<Receipts r={data.receipts} />}>
-          <div className="flex items-end gap-3">
-            <span className={cn("font-mono text-6xl leading-none tabular-nums", LEVEL_TEXT[level])}>{data.risk.score}</span>
-            <span className={cn("mb-1 rounded-full px-2 py-0.5 text-xs font-medium text-void uppercase", LEVEL_BG[level])}>{level}</span>
-          </div>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-graphite">
-            <div className={cn("h-full rounded-full", LEVEL_BG[level])} style={{ width: `${data.risk.score}%` }} />
-          </div>
-          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+      <Grid cols="aside-main">
+        <Panel title="Risk" action={<Receipts r={data.receipts} />}>
+          <RiskGauge score={data.risk.score} level={sev} className="mb-4" />
+
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
             {(
               [
                 ["Expected breakages", c.expected_breakages.toFixed(1)],
@@ -237,81 +365,98 @@ export function ImpactView({ repo, data, onPick, runHref }: { repo: string; data
               ] as const
             ).map(([k, v]) => (
               <div key={k}>
-                <dt className="text-fog">{k}</dt>
-                <dd className="font-mono text-paper">{v}</dd>
+                <dt>
+                  <Eyebrow>{k}</Eyebrow>
+                </dt>
+                <dd className="mt-0.5 font-mono text-body-sm text-ink-strong tabular-nums">{v}</dd>
               </div>
             ))}
           </dl>
-          <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border/70 pt-4">
+
+          <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-4">
             {TIERS.map((t) => (
-              <Stat key={t} label={t} value={num(data.counts[t])} tone={TIER_TEXT[t]} />
+              <Metric key={t} size="sm" label={t} value={num(data.counts[t])} tone={tierText(t)} />
             ))}
           </div>
+
           {data.untested_seeds.length > 0 && (
-            <p className="mt-4 rounded-md bg-ov-missed/10 px-2.5 py-2 text-xs text-ov-missed">
+            // The single most actionable sentence on the page: a change nothing
+            // tests cannot be verified by running anything.
+            <p className="mt-4 rounded-control bg-warn/10 px-2.5 py-2 text-caption text-warn">
               No test reaches {data.untested_seeds.slice(0, 8).map((s) => s.name).join(", ")}
               {data.untested_seeds.length > 8 && ` and ${num(data.untested_seeds.length - 8)} more`}.
             </p>
           )}
           {data.markdown && (
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4">
               <CopyButton text={data.markdown} label="Copy as markdown" />
             </div>
           )}
-        </Tile>
-        <Tile title="Blast radius" bodyClassName="p-3">
+        </Panel>
+
+        <Panel title="Blast radius" bodyClassName="p-3">
           {data.impacted.length ? (
             <ImpactGraph repo={repo} data={data} onSelect={pick} selected={open ?? undefined} />
           ) : (
-            <Empty title="Nothing depends on this" icon={<GitDiff className="size-6" />}>
+            <Empty title="Nothing depends on this" icon={<GitDiff className="size-6" aria-hidden />}>
               No resolved caller, subclass or co-change partner was found within {data.max_depth} hops.
             </Empty>
           )}
-        </Tile>
-      </div>
+        </Panel>
+      </Grid>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Tile
-          title={`Impacted symbols · ${list.length}`}
+      <Grid cols="main-aside">
+        <Panel
+          title={`Impacted symbols · ${num(list.length)}`}
           action={
-            <div className="flex gap-1" role="group" aria-label="Filter by tier">
-              {(["all", ...TIERS] as const).map((t) => (
-                <Button key={t} size="sm" variant={tier === t ? "secondary" : "ghost"} className="h-6 px-2 text-[11px]" onClick={() => setTier(t)} aria-pressed={tier === t}>
-                  {t}
-                </Button>
-              ))}
-            </div>
+            <Segmented
+              label="Filter by tier"
+              size="sm"
+              value={tier}
+              onChange={setTier}
+              options={(["all", ...TIERS] as const).map((t) => ({ value: t, label: t }))}
+            />
           }
           bodyClassName="p-2"
         >
           {list.length ? (
             <ul className="space-y-0.5">
               {list.slice(0, limit).map((it) => (
-                <ImpactRow key={it.id} repo={repo} it={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} />
+                <ImpactRow
+                  key={it.id}
+                  repo={repo}
+                  it={it}
+                  open={open === it.id}
+                  onToggle={() => setOpen(open === it.id ? null : it.id)}
+                />
               ))}
             </ul>
           ) : (
-            <p className="p-3 text-sm text-muted-foreground">Nothing in this tier.</p>
+            <p className="p-3 text-body-sm text-ink-muted">Nothing in this tier.</p>
           )}
           {list.length > limit && (
-            <Button variant="ghost" size="sm" className="mt-1 w-full text-xs" onClick={() => setLimit(limit + 60)}>
-              Show more ({list.length - limit})
+            <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setLimit(limit + 60)}>
+              Show more ({num(list.length - limit)} left)
             </Button>
           )}
-        </Tile>
+        </Panel>
 
-        <div className="space-y-4">
-          <Tile
-            title={`Tests to run · ${data.tests.length}`}
+        <Stack className="gap-4">
+          <Panel
+            title={`Tests to run · ${num(data.tests.length)}`}
             bodyClassName="p-2"
             action={
               data.tests.length ? (
                 <div className="flex items-center gap-1.5">
-                  <CopyButton text={`pytest ${[...new Set(data.tests.map((t) => pytestNode(t.id)))].join(" ")}`} label="pytest" className="h-7" />
+                  <CopyButton
+                    text={`pytest ${[...new Set(data.tests.map((t) => pytestNode(t.id)))].join(" ")}`}
+                    label="pytest"
+                    className="h-7"
+                  />
                   {runHref && (
                     <Button asChild size="sm" className="h-7">
                       <Link href={runHref}>
-                        <Play className="size-3.5" /> Run
+                        <Play className="size-3.5" aria-hidden /> Run
                       </Link>
                     </Button>
                   )}
@@ -320,122 +465,152 @@ export function ImpactView({ repo, data, onPick, runHref }: { repo: string; data
             }
           >
             {data.runtime_tests ? (
-              <p className="px-2 pb-1.5 text-[11px] text-fog">
-                {data.runtime_tests} found by recorded coverage: they ran this code, whether or not a static edge reaches it.
+              <p className="px-2 pb-1.5 text-micro text-ink-muted">
+                {data.runtime_tests} found by recorded coverage: they ran this code, whether or not a static edge
+                reaches it.
               </p>
             ) : null}
             {data.tests.length ? (
-              <ul className="space-y-0.5">
-                {data.tests.slice(0, 30).map((t) => (
-                  <li key={t.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs">
-                    <TestTube className="size-3.5 shrink-0 text-signal-teal" aria-hidden />
-                    <SymLink repo={repo} id={t.id} name={t.name} className="min-w-0 truncate text-[12px]" />
-                    {t.runtime && (
-                      <span className="shrink-0 rounded bg-signal-teal/10 px-1 text-[11px] text-signal-teal" title="This test executed the changed code when coverage was recorded">
-                        ran it
-                      </span>
-                    )}
-                    <span className="ml-auto font-mono text-[11px] text-fog">{pct(t.p)}</span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="space-y-0.5">
+                  {data.tests.slice(0, 30).map((t) => (
+                    <li key={t.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-caption">
+                      <TestTube className="size-3.5 shrink-0 text-info" aria-hidden />
+                      <SymLink repo={repo} id={t.id} name={t.name} className="min-w-0 truncate text-caption" />
+                      {t.runtime && (
+                        // Measured, not inferred — worth its own token, because it is
+                        // the strongest evidence on this panel.
+                        <Chip tone="info" size="sm">
+                          ran it
+                        </Chip>
+                      )}
+                      <Mono className="ml-auto text-micro text-ink-faint">{pct(t.p)}</Mono>
+                    </li>
+                  ))}
+                </ul>
+                {data.tests.length > 30 && (
+                  <p className="px-2 pt-1 text-micro text-ink-faint">
+                    and {num(data.tests.length - 30)} more — the copy and run buttons use all of them.
+                  </p>
+                )}
+              </>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">
-                No test reaches this change. Record per-test coverage (<code className="font-mono">aftershock coverage {repo}</code>) to catch tests a static edge misses.
+              <p className="p-2 text-body-sm text-ink-muted">
+                No test reaches this change. Record per-test coverage (
+                <code className="font-mono">aftershock coverage {repo}</code>) to catch tests a static edge misses.
               </p>
             )}
-          </Tile>
+          </Panel>
 
-          <Tile title="Hidden coupling" bodyClassName="p-2">
+          <Panel
+            title="Hidden coupling"
+            note="Files that keep changing with yours but have no edge in the graph."
+            bodyClassName="p-2"
+          >
             {data.hidden_coupling.length ? (
               <ul className="space-y-1">
                 {data.hidden_coupling.slice(0, 10).map((h) => (
-                  <li key={h.path} className="rounded px-2 py-1 text-xs">
+                  <li key={h.path} className="rounded-[6px] px-2 py-1 text-caption">
                     <div className="flex items-center gap-2">
-                      <FileLink repo={repo} path={h.path} className="min-w-0 truncate text-[12px]" />
-                      <span className="ml-auto font-mono text-[11px] text-ov-missed">{pct(h.strength)}</span>
+                      <FileLink repo={repo} path={h.path} className="min-w-0 truncate text-caption" />
+                      <Mono className="ml-auto text-micro text-warn">{pct(h.strength)}</Mono>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-fog">
+                    <div className="mt-0.5 text-micro text-ink-muted">
                       changed together {h.count}× {h.via?.length ? `with ${h.via.join(", ")}` : ""}, no static edge
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No co-change partner without a static edge.</p>
+              <p className="p-2 text-body-sm text-ink-muted">No co-change partner without a static edge.</p>
             )}
-          </Tile>
+          </Panel>
 
-          <Tile title="Import-only dependents" bodyClassName="p-2">
+          <Panel title="Import-only dependents" bodyClassName="p-2">
             {data.import_only?.length ? (
               <ul className="space-y-1">
                 {data.import_only.slice(0, 10).map((r) => (
-                  <li key={`${r.file}->${r.imports}`} className="rounded px-2 py-1 text-xs">
-                    <FileLink repo={repo} path={r.file} line={r.line ?? undefined} className="block min-w-0 truncate text-[12px]" />
-                    <div className="mt-0.5 truncate text-[11px] text-fog" title={r.names?.join(", ")}>
+                  <li key={`${r.file}->${r.imports}`} className="rounded-[6px] px-2 py-1 text-caption">
+                    <FileLink
+                      repo={repo}
+                      path={r.file}
+                      line={r.line ?? undefined}
+                      className="block min-w-0 truncate text-caption"
+                    />
+                    <div className="mt-0.5 truncate text-micro text-ink-muted">
                       imports {r.imports.split("/").pop()}
-                      {r.names?.length ? ` (${r.names.slice(0, 3).join(", ")}${r.names.length > 3 ? ", …" : ""})` : ""}, no resolved call
+                      {r.names?.length
+                        ? ` (${r.names.slice(0, 3).join(", ")}${r.names.length > 3 ? ", …" : ""})`
+                        : ""}
+                      , no resolved call
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">Every importer of the changed files is already above.</p>
+              <p className="p-2 text-body-sm text-ink-muted">Every importer of the changed files is already above.</p>
             )}
-          </Tile>
+          </Panel>
 
-          <Tile title="Who to ask" bodyClassName="p-2">
+          <Panel title="Who to ask" bodyClassName="p-2">
             {data.owners.length ? (
               <ul className="space-y-1">
                 {data.owners.slice(0, 6).map((o) => (
-                  <li key={o.email} className="flex items-center gap-2 rounded px-2 py-1 text-xs">
-                    <Users className="size-3.5 shrink-0 text-fog" aria-hidden />
-                    <span className="truncate text-paper" title={o.email}>
+                  <li key={o.email} className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-caption">
+                    <Users className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
+                    {/* The email is the disambiguator when two people share a name,
+                        and it is already in the indexed git history. */}
+                    <span className="truncate text-ink-strong" title={o.email}>
                       {o.name}
                     </span>
-                    <span className="ml-auto shrink-0 font-mono text-[11px] text-fog">
+                    <Mono className="ml-auto shrink-0 text-micro text-ink-faint">
                       {num(o.commits)} commits{o.last ? ` · ${relTime(o.last)}` : ""}
-                    </span>
+                    </Mono>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No git history indexed.</p>
+              <p className="p-2 text-body-sm text-ink-muted">No git history indexed.</p>
             )}
-          </Tile>
-        </div>
-      </div>
+          </Panel>
+        </Stack>
+      </Grid>
 
-      <Tile title={`Files · ${data.files.length}`} bodyClassName="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-left text-[11px] text-fog">
-              <tr className="border-b border-border/70">
-                <th className="px-4 py-2 font-normal">File</th>
-                <th className="w-px whitespace-nowrap px-2 py-2 text-right font-normal">p</th>
-                <th className="w-px whitespace-nowrap px-2 py-2 text-right font-normal">Symbols</th>
-                <th className="w-px whitespace-nowrap px-2 py-2 text-right font-normal">Tests</th>
-                <th className="w-px whitespace-nowrap px-4 py-2 text-right font-normal">Hop</th>
+      <Panel title={`Files · ${num(data.files.length)}`} flush>
+        <Scroller className="max-h-[520px] overflow-x-auto">
+          <table className="w-full text-caption">
+            <thead className="sticky top-0 z-10 bg-surface-raised text-left">
+              <tr className="border-b border-line">
+                <th className="px-4 py-2 font-mono text-micro font-normal text-ink-muted">File</th>
+                <th className="w-px px-2 py-2 text-right font-mono text-micro font-normal whitespace-nowrap text-ink-muted">p</th>
+                <th className="w-px px-2 py-2 text-right font-mono text-micro font-normal whitespace-nowrap text-ink-muted">Symbols</th>
+                <th className="w-px px-2 py-2 text-right font-mono text-micro font-normal whitespace-nowrap text-ink-muted">Tests</th>
+                <th className="w-px px-4 py-2 text-right font-mono text-micro font-normal whitespace-nowrap text-ink-muted">Hop</th>
               </tr>
             </thead>
             <tbody>
               {data.files.slice(0, 50).map((f) => (
-                <tr key={f.file} className="border-b border-border/40 last:border-0">
+                <tr key={f.file} className="border-b border-line/60 last:border-0 hover:bg-accent">
                   <td className="w-full max-w-0 truncate px-4 py-1.5">
                     <FileLink repo={repo} path={f.file} />
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-mist">{pct(f.p)}</td>
-                  <td className="px-2 py-1.5 text-right font-mono">{f.symbols}</td>
-                  <td className="px-2 py-1.5 text-right font-mono">{f.tests}</td>
-                  <td className="px-4 py-1.5 text-right font-mono">{f.min_hop}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-ink tabular-nums">{pct(f.p)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums">{f.symbols}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums">{f.tests}</td>
+                  <td className="px-4 py-1.5 text-right font-mono tabular-nums">{f.min_hop}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      </Tile>
+        </Scroller>
+        {data.files.length > 50 && (
+          <p className="border-t border-line px-4 py-2 text-micro text-ink-faint">
+            showing 50 of {num(data.files.length)}
+          </p>
+        )}
+      </Panel>
 
-      {data.note && <p className="text-xs text-fog">{data.note}</p>}
-    </div>
+      {data.note && <p className="text-caption text-ink-muted">{data.note}</p>}
+    </Stack>
   );
 }
