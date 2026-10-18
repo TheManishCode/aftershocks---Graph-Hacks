@@ -318,6 +318,47 @@ export function Divider({ label, className, ...rest }: React.ComponentProps<"div
 }
 
 /* -------------------------------------------------------------------------- */
+/* Range — a small labelled slider with its value shown next to it.            */
+/* -------------------------------------------------------------------------- */
+
+export interface RangeProps {
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  /** Visible text before the track. Doubles as the accessible name. */
+  label: string;
+  /** How the number reads aloud, e.g. `(n) => \`${n} hops\``. */
+  format?: (value: number) => string;
+  className?: string;
+}
+
+/**
+ * The label is a real `<label>` wrapping the input rather than a `title`, so the
+ * control is named the same way for a screen reader as it is on screen, and the
+ * text is a second hit target for the slider.
+ */
+export function Range({ value, onChange, min = 1, max = 6, step = 1, label, format, className }: RangeProps) {
+  return (
+    <label className={cn("flex items-center gap-2 text-caption text-ink-muted", className)}>
+      {label}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-valuetext={format?.(value)}
+        className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-line accent-[var(--color-brand)]"
+      />
+      <Mono className="w-4 text-ink-strong tabular-nums">{value}</Mono>
+    </label>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Scroller — a bounded scroll region that fades its overflowing edge.         */
 /* Used instead of raw `overflow-y-auto` so long lists signal there is more.   */
 /* -------------------------------------------------------------------------- */

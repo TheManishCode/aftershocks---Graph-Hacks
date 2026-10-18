@@ -1,11 +1,37 @@
 "use client";
 
+/**
+ * Impact: "I am about to change this — what breaks?"
+ *
+ * Two decisions shape this page.
+ *
+ * 1. **The URL is the state.** Targets, kind of change and depth all live in the
+ *    query string, so an analysis can be pasted into a pull request or a chat and
+ *    reproduce exactly. That is also why a shared link runs itself on arrival.
+ *
+ * 2. **The kind of change is a first-class control, not an advanced option.**
+ *    Renaming a function and editing its body put wildly different things at risk,
+ *    and a tool that silently assumes one of them is wrong half the time. Each
+ *    option says in plain words what it means for the callers.
+ */
+
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  Empty,
+  ErrorNote,
+  Eyebrow,
+  Page,
+  PageHeader,
+  Panel,
+  Range,
+  Segmented,
+  Spinner,
+  Stack,
+} from "@/components/ds";
 import { Zap } from "@/components/icons";
 import { ImpactView } from "@/components/impact-view";
-import { Empty, ErrorNote, Page, PageHeader, Spinner } from "@/components/kit";
 import { repoHref } from "@/components/shell/nav";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
@@ -14,11 +40,11 @@ import { api, type Change } from "@/lib/api";
 import { useAction, useRepo } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-const CHANGES: { key: Change; label: string; hint: string }[] = [
-  { key: "body", label: "Body", hint: "behaviour changes, signature stays" },
-  { key: "signature", label: "Signature", hint: "parameters or return type change" },
-  { key: "rename", label: "Rename", hint: "every reference must follow" },
-  { key: "delete", label: "Delete", hint: "every reference breaks" },
+const CHANGES: { value: Change; label: string; hint: string }[] = [
+  { value: "body", label: "Body", hint: "behaviour changes, the signature stays" },
+  { value: "signature", label: "Signature", hint: "parameters or return type change" },
+  { value: "rename", label: "Rename", hint: "every reference must follow" },
+  { value: "delete", label: "Delete", hint: "every reference breaks" },
 ];
 
 export default function ImpactPage() {
@@ -31,7 +57,6 @@ export default function ImpactPage() {
   const [depth, setDepth] = useState(() => Number(sp.get("depth")) || 4);
   const run = useAction(api.impact);
 
-  // the URL is the state: a link to /impact?t=…&change=… reproduces the analysis
   const go = (t = targets, c = change, d = depth) => {
     if (!t.length) return;
     const qs = new URLSearchParams();
@@ -44,83 +69,75 @@ export default function ImpactPage() {
 
   useEffect(() => {
     if (targets.length) go();
-    // run once for a shared link
+    // Runs once per repository, to make a shared link self-executing. The other
+    // inputs are deliberately absent: re-running on every slider tick would fire
+    // a graph traversal per pixel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo]);
 
+  const hint = CHANGES.find((c) => c.value === change)?.hint;
+
   return (
     <Page>
-      <PageHeader title="Impact" sub="Pick what you are about to change. Aftershock walks callers, subclasses and co-change partners and ranks what is likely to break, with the chain that explains each one." />
+      <PageHeader
+        title="Impact"
+        sub="Name what you are about to change. Aftershock walks callers, subclasses and co-change partners, then ranks what is likely to break — each one with the chain that explains it."
+      />
 
-      <form
-        className="mb-6 rounded-xl border border-border bg-card/50 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          go();
-        }}
-      >
-        <Label htmlFor="targets" className="mb-1.5 text-xs text-fog">
-          Symbols or files
-        </Label>
-        <SymbolPicker id="targets" repo={repo} value={targets} onChange={setTargets} />
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <div className="flex rounded-md border border-border p-0.5" role="radiogroup" aria-label="Kind of change">
-            {CHANGES.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                role="radio"
-                aria-checked={change === c.key}
-                title={c.hint}
-                onClick={() => setChange(c.key)}
-                className={cn("rounded px-3 py-1 text-xs transition-colors", change === c.key ? "bg-white/10 text-paper" : "text-fog hover:text-mist")}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-          <label className="flex items-center gap-2 text-xs text-fog">
-            Depth
-            <input
-              type="range"
-              min={1}
-              max={6}
-              value={depth}
-              onChange={(e) => setDepth(Number(e.target.value))}
-              className="w-24 accent-[var(--color-brand)]"
-              aria-valuetext={`${depth} hops`}
+      <Stack className="gap-[var(--section-gap)]">
+        <form onSubmit={(e) => { e.preventDefault(); go(); }}>
+          <Panel title="What are you changing?" bodyClassName="flex flex-col gap-3">
+            <div>
+              <Label htmlFor="targets" className="mb-1.5 block">
+                <Eyebrow>Symbols or files</Eyebrow>
+              </Label>
+              <SymbolPicker id="targets" repo={repo} value={targets} onChange={setTargets} />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+              <Segmented
+                label="Kind of change"
+                value={change}
+                onChange={setChange}
+                options={CHANGES.map(({ value, label, hint }) => ({ value, label, title: hint }))}
+              />
+              <Range label="Depth" value={depth} onChange={setDepth} format={(n) => `${n} hops`} />
+              {/* The hint is the same text as the active option's tooltip, shown
+                  outright where there is room: a tooltip nobody hovers is not an
+                  explanation. */}
+              <span className="hidden text-caption text-ink-faint md:inline">{hint}</span>
+              <Button type="submit" className="ml-auto" disabled={!targets.length || run.loading}>
+                <Zap className="size-4" aria-hidden /> {run.loading ? "Tracing…" : "Trace impact"}
+              </Button>
+            </div>
+          </Panel>
+        </form>
+
+        {run.error ? (
+          <ErrorNote error={run.error} />
+        ) : run.loading && !run.data ? (
+          <Spinner label="Walking the graph" />
+        ) : run.data ? (
+          // Dimmed, not replaced: a re-run with a new depth should let you compare
+          // against what is already on screen rather than blanking it first.
+          <div className={cn(run.loading && "opacity-60 transition-opacity")}>
+            <ImpactView
+              repo={repo}
+              data={run.data}
+              runHref={`${repoHref(repo, "/tests")}?${new URLSearchParams([["mode", "targets"], ...targets.map((t) => ["t", t])])}`}
+              onPick={(ref, id) => {
+                const t = targets.map((x) => (x === ref ? id : x));
+                setTargets(t);
+                go(t);
+              }}
             />
-            <span className="w-4 font-mono text-paper">{depth}</span>
-          </label>
-          <span className="hidden text-xs text-fog md:inline">{CHANGES.find((c) => c.key === change)?.hint}</span>
-          <Button type="submit" className="ml-auto" disabled={!targets.length || run.loading}>
-            <Zap className="size-4" /> {run.loading ? "Tracing…" : "Trace impact"}
-          </Button>
-        </div>
-      </form>
-
-      {run.error ? (
-        <ErrorNote error={run.error} />
-      ) : run.loading && !run.data ? (
-        <Spinner label="Walking the graph" />
-      ) : run.data ? (
-        <div className={cn(run.loading && "opacity-60 transition-opacity")}>
-          <ImpactView
-            repo={repo}
-            data={run.data}
-            runHref={`${repoHref(repo, "/tests")}?${new URLSearchParams([["mode", "targets"], ...targets.map((t) => ["t", t])])}`}
-            onPick={(ref, id) => {
-              const t = targets.map((x) => (x === ref ? id : x));
-              setTargets(t);
-              go(t);
-            }}
-          />
-        </div>
-      ) : (
-        <Empty title="Choose a change to trace" icon={<Zap className="size-6" />}>
-          Search by name, paste a <code className="font-mono text-paper">path::Qualified.name</code>, or pick a file to trace every symbol in it.
-        </Empty>
-      )}
+          </div>
+        ) : (
+          <Empty title="Choose a change to trace" icon={<Zap className="size-6" aria-hidden />}>
+            Search by name, paste a <code className="font-mono text-ink-strong">path::Qualified.name</code>, or pick a
+            file to trace every symbol in it.
+          </Empty>
+        )}
+      </Stack>
     </Page>
   );
 }
