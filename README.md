@@ -17,8 +17,8 @@ $ aftershock path shop get_user connect
 
 (Output from the test fixture in `tests/fixtures/mini`. CLI output is markdown so it pastes into PRs and chat.)
 
-A 35-second walkthrough of the web UI on httpx (overview, explore, the impact of changing `Client.send`, diff,
-culprit) is in [`media/aftershock-demo.mp4`](media/aftershock-demo.mp4); `scripts/demo_video.mjs` re-records it.
+A two-minute walkthrough of the web UI on the `ledger` demo repo (test library, overview, explore, impact, diff, path, test run,
+culprit, Ask, Cypher) is in [`media/aftershock-demo.mp4`](media/aftershock-demo.mp4); `scripts/demo_video.mjs` re-records it.
 
 ## What it does
 
