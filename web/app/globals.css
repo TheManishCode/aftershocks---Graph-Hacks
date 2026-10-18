@@ -173,6 +173,12 @@
   --text-body-sm: 13px;
   --text-body-sm--line-height: 1.55;
   --text-body-sm--letter-spacing: -0.006em;
+  /* Code sits between caption and body-sm: JetBrains Mono runs large for its
+   * point size, so 12.5px next to 13px prose reads as the same size. No
+   * negative tracking — monospace is already spaced for scanning. */
+  --text-code: 12.5px;
+  --text-code--line-height: 1.5;
+  --text-code--letter-spacing: 0;
   --text-body: 15px;
   --text-body--line-height: 1.6;
   --text-body--letter-spacing: -0.011em;

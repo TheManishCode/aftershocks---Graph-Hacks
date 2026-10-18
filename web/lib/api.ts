@@ -305,6 +305,49 @@ export interface AskResult {
   mode: "claude" | "router";
   route?: string;
   hint?: string;
+  /** the model that actually answered; absent on the router path */
+  model?: string;
+  provider?: string;
+  usage?: { input: number; output: number; cache_read: number };
+}
+
+/** How hard a reasoning model should think. Ignored by models that do not reason. */
+export type Effort = "low" | "medium" | "high";
+
+export interface AskPayload {
+  question: string;
+  /** provider-qualified, e.g. "openrouter:anthropic/claude-sonnet-5". Omit to use the server's default. */
+  model?: string;
+  effort?: Effort;
+}
+
+/* ---- model providers (D27) ------------------------------------------------ */
+
+export interface ProviderModel {
+  /** provider-qualified id — what you send as `model` */
+  id: string;
+  /** the provider's own name for it */
+  model: string;
+  label: string;
+  note: string;
+  reasoning: boolean;
+}
+
+export interface ProviderStatus {
+  id: string;
+  label: string;
+  wire: "anthropic" | "openai";
+  docs: string;
+  key_hint: string;
+  /** a local server that needs no key */
+  keyless: boolean;
+  configured: boolean;
+  /** "env" keys belong to the operator and cannot be cleared from the UI; "stored" ones can */
+  source: "env" | "stored" | "local" | "";
+  /** the last four characters of the key — never the key itself */
+  last4: string;
+  env_vars: string[];
+  models: ProviderModel[];
 }
 
 export type RunMode = "diff" | "targets" | "all" | "coverage";
@@ -473,8 +516,76 @@ export const api = {
   runtime: () => request<{ enabled: boolean; reason: string | null }>("GET", "/runtime"),
   runs: (repo: string, limit = 20) => request<{ runs: TestRunSummary[] }>("GET", `${r(repo)}/runs${q({ limit })}`),
   runDetail: (repo: string, id: string) => request<RunDetail>("GET", `${r(repo)}/runs/${encodeURIComponent(id)}`),
-  libraries: (repo: string) => request<{ libraries: { name: string; path: string; on_disk: boolean; files?: number; tests?: number }[] }>("GET", `${r(repo)}/libraries`),
+
+  /* ---- test libraries ----------------------------------------------------- */
+
+  libraries: (repo: string) => request<{ libraries: TestLibrary[] }>("GET", `${r(repo)}/libraries`),
+  /** Register an external pytest directory. The repo must be re-indexed before its tests appear. */
+  libraryAdd: (repo: string, name: string, path: string) =>
+    request<LibraryResult>("POST", `${r(repo)}/libraries`, { name, path }),
+  libraryRemove: (repo: string, name: string) =>
+    request<LibraryResult>("DELETE", `${r(repo)}/libraries/${encodeURIComponent(name)}`),
+
+  /** Which tests a change selects — the same computation a run does, without executing anything. */
+  selectTests: (repo: string, b: { targets?: string[]; rev?: string }) => request<RunSelected>("POST", `${r(repo)}/tests`, b),
+
+  /* ---- analysis ----------------------------------------------------------- */
+
+  owners: (repo: string, paths: string[]) => request<{ owners: Owner[]; cochange: Cochange[] }>("POST", `${r(repo)}/owners`, { paths }),
+  hotspots: (repo: string, limit = 20) =>
+    request<{ hotspots: Hotspot[]; central: Overview["central"] }>("GET", `${r(repo)}/hotspots${q({ limit })}`),
+  /** Candidates, not verdicts — reflection and string dispatch are invisible to the graph. */
+  deadCode: (repo: string, limit = 100) =>
+    request<{ candidates: Overview["dead_code"]; note: string }>("GET", `${r(repo)}/dead-code${q({ limit })}`),
+  graph: (repo: string, limit = 600) => request<FileGraph>("GET", `${r(repo)}/graph${q({ limit })}`),
+  /** The diff report as Markdown, for copying into a PR. */
+  diffMd: (repo: string, b: { rev?: string; depth?: number }) => request<string>("POST", `${r(repo)}/diff.md`, b),
+  stats: () => request<{ queries: Record<string, unknown>; indexing: string[] }>("GET", "/stats"),
+
+  ask: (repo: string, b: AskPayload) => request<AskResult>("POST", `${r(repo)}/ask`, b),
+
+  /* ---- model providers (D27) ---------------------------------------------- */
+
+  providers: () => request<{ providers: ProviderStatus[]; default: string | null }>("GET", "/providers"),
+  /**
+   * Store a key for a provider. Loopback-only on the server: a shared deployment must use the environment
+   * variable instead. The key is written server-side at 0600 and is never returned by any route.
+   */
+  providerSetKey: (id: string, key: string) =>
+    request<{ providers: ProviderStatus[]; default: string | null }>("PUT", `/providers/${encodeURIComponent(id)}`, { key }),
+  providerClearKey: (id: string) =>
+    request<{ providers: ProviderStatus[]; default: string | null }>("DELETE", `/providers/${encodeURIComponent(id)}`),
 };
+
+export interface FileGraph {
+  nodes: {
+    path: string;
+    lang: string;
+    loc: number;
+    is_test?: boolean;
+    churn?: number;
+    community?: number;
+    error?: string;
+    symbols: number;
+    complexity: number;
+  }[];
+  edges: { src: string; dst: string }[];
+}
+
+export interface TestLibrary {
+  name: string;
+  path: string;
+  /** false when the directory has been moved or deleted since it was registered */
+  on_disk: boolean;
+  files?: number;
+  tests?: number;
+}
+
+export interface LibraryResult {
+  repo: string;
+  libraries: Record<string, string>;
+  note?: string;
+}
 
 export const eventsUrl = (repo: string, after = 0) => `/api/v1${r(repo)}/events?after=${after}`;
 export const askStreamUrl = (repo: string) => `/api/v1${r(repo)}/ask/stream`;

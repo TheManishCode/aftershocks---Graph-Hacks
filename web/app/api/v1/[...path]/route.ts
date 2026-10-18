@@ -43,6 +43,14 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     // running tests executes repo code (D18), heal also edits it (D25); the API checks too, but only sees this proxy's loopback address
     return Response.json({ detail: "running tests is only allowed from this machine" }, { status: 403 });
   }
+  if (path[0] === "providers" && req.method !== "GET" && !fromThisMachine(req)) {
+    // Writing a provider key (D27) is loopback-only for the same reason: the API's own check sees this proxy's
+    // address, not the visitor's, so this is the guard that actually holds. GET is safe — it never returns a key.
+    return Response.json(
+      { detail: "keys can only be set from the machine the API runs on; use the environment variable on a shared deployment" },
+      { status: 403 },
+    );
+  }
   const url = `${UPSTREAM}/api/v1/${path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
   const headers = new Headers();
   for (const h of PASS_REQ) {
@@ -50,7 +58,7 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     if (v) headers.set(h, v);
   }
   if (KEY) headers.set("authorization", `Bearer ${KEY}`);
-  const hasBody = req.method === "POST";
+  const hasBody = req.method === "POST" || req.method === "PUT";
   let res: Response;
   try {
     res = await fetch(url, {
@@ -73,4 +81,4 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   return new Response(res.body, { status: res.status, headers: out });
 }
 
-export { forward as DELETE, forward as GET, forward as POST };
+export { forward as DELETE, forward as GET, forward as POST, forward as PUT };

@@ -57,12 +57,25 @@ export interface PanelProps extends Omit<React.ComponentProps<"section">, "title
 }
 
 export function Panel({ title, action, note, flush, children, className, bodyClassName, tone, interactive, ...rest }: PanelProps) {
+  // A <section> is only a landmark once it has an accessible name; an unnamed one
+  // is noise in a screen reader's region list. Titled panels name themselves from
+  // their own header, so "Run", "Test libraries" and "Recent runs" become real
+  // navigable regions instead of three anonymous boxes.
+  const titleId = React.useId();
   return (
-    <section className={cn(panel({ tone, interactive }), className)} {...rest}>
+    <section
+      className={cn(panel({ tone, interactive }), className)}
+      {...(title && !rest["aria-label"] && !rest["aria-labelledby"] ? { "aria-labelledby": titleId } : {})}
+      {...rest}
+    >
       {(title || action) && (
         <header className="flex min-h-[var(--panel-head-h)] flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-[var(--panel-pad-x)] py-1.5">
           <div className="min-w-0">
-            {title && <Eyebrow className="block truncate">{title}</Eyebrow>}
+            {title && (
+              <Eyebrow id={titleId} className="block truncate">
+                {title}
+              </Eyebrow>
+            )}
             {note && <span className="mt-0.5 block truncate text-caption text-ink-muted normal-case">{note}</span>}
           </div>
           {action && <div className="ml-auto flex shrink-0 items-center gap-1.5">{action}</div>}

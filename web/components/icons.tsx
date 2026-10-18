@@ -18,17 +18,21 @@ import {
   CheckCircleIcon,
   CheckIcon,
   CircleNotchIcon,
+  ClockCounterClockwiseIcon,
   CodeIcon,
   CopyIcon,
   CrosshairIcon,
   DatabaseIcon,
   FileCodeIcon,
   FlowArrowIcon,
+  FolderOpenIcon,
+  GearSixIcon,
   GitDiffIcon,
   GithubLogoIcon,
   GraphIcon,
   HouseIcon,
   InfoIcon as PInfoIcon,
+  KeyIcon,
   LightningIcon,
   ListIcon,
   MagnifyingGlassIcon,
@@ -37,12 +41,15 @@ import {
   PaperPlaneTiltIcon,
   PlayIcon,
   PlusIcon,
+  ProhibitIcon,
   ReceiptIcon,
   RobotIcon,
   SidebarSimpleIcon,
+  SkipBackIcon,
   SlidersHorizontalIcon,
   SparkleIcon,
   SquaresFourIcon,
+  StackIcon,
   StopIcon,
   SunIcon,
   TerminalWindowIcon,
@@ -79,6 +86,14 @@ export const CircleAlert = light(WarningCircleIcon, "CircleAlert");
 export const CircleCheck = light(CheckCircleIcon, "CircleCheck");
 export const Code = light(CodeIcon, "Code");
 export const Copy = light(CopyIcon, "Copy");
+export const Clock = light(ClockCounterClockwiseIcon, "Clock");
+/** Restore a conversation to an earlier turn. */
+export const Restore = light(SkipBackIcon, "Restore");
+export const Key = light(KeyIcon, "Key");
+export const Settings = light(GearSixIcon, "Settings");
+export const Folder = light(FolderOpenIcon, "Folder");
+export const Library = light(StackIcon, "Library");
+export const Prohibit = light(ProhibitIcon, "Prohibit");
 export const Crosshair = light(CrosshairIcon, "Crosshair");
 export const Database = light(DatabaseIcon, "Database");
 export const FileCode = light(FileCodeIcon, "FileCode");
