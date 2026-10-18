@@ -28,6 +28,16 @@ HERE = Path(__file__).parent
 PLUGIN = "_aftershock_pytest"
 
 
+_SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)", re.IGNORECASE)
+
+
+def child_env() -> dict[str, str]:
+    """The environment for anything that runs the repo's code: ours minus Aftershock's settings and anything that
+    looks like a credential (model keys, the graph password), which the repo under test has no business reading."""
+    return {k: v for k, v in os.environ.items()
+            if not k.startswith(("AFTERSHOCK_", "COVERAGE_", "FALKORDB_")) and not _SECRET_ENV.search(k)}
+
+
 class RuntimeErrorReport(RuntimeError):
     """A test run could not be performed (no interpreter, pytest missing, timeout)."""
 
@@ -99,7 +109,7 @@ def run_pytest(root: Path, python: str, args: list[str], *, coverage_file: Path 
     """
     with tempfile.TemporaryDirectory(prefix="aftershock-run-") as tmp:
         results = Path(tmp) / "results.jsonl"
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("AFTERSHOCK_", "COVERAGE_"))}
+        env = child_env()
         env["AFTERSHOCK_RESULTS"] = str(results)
         env["PYTHONPATH"] = os.pathsep.join([*(str(p) for p in extra_path or []), str(HERE),
                                              *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])])
@@ -186,7 +196,8 @@ def record_coverage(g: RepoGraph, root: Path, python: str, args: list[str] | Non
                     cancel: threading.Event | None = None, libs: dict[str, str] | None = None) -> dict:
     """Run the whole suite (then each registered test library, unless `args` picks tests) under per-test coverage
     and replace the graph's COVERS edges with the result."""
-    probe = subprocess.run([python, "-c", "import coverage, pytest"], capture_output=True, text=True, check=False)
+    probe = subprocess.run([python, "-c", "import coverage, pytest"], capture_output=True, text=True, check=False,
+                           env=child_env())
     if probe.returncode != 0:
         raise RuntimeErrorReport(f"{python} needs `coverage` and `pytest` installed: {probe.stderr.strip()[-300:]}")
     with tempfile.TemporaryDirectory(prefix="aftershock-cov-") as tmp:
@@ -270,7 +281,7 @@ def _map_coverage(g: RepoGraph, root: Path, python: str, data: Path, results: li
         sym_json, out_json = Path(tmp) / "spans.json", Path(tmp) / "pairs.json"
         sym_json.write_text(json.dumps(ranges))
         p = subprocess.run([python, str(HERE / "_aftershock_covread.py"), str(data), str(root), str(sym_json),
-                            str(out_json)], capture_output=True, text=True, check=False, timeout=600)
+                            str(out_json)], capture_output=True, text=True, check=False, timeout=600, env=child_env())
         if p.returncode != 0:
             raise RuntimeErrorReport(f"could not read coverage data: {p.stderr[-800:]}")
         mapped = json.loads(out_json.read_text())
@@ -296,7 +307,8 @@ _COVERAGE_OK: dict[str, bool] = {}
 def can_measure(python: str) -> bool:
     """Can this interpreter run tests under per-test coverage? (Cached; a missing `coverage` just means static.)"""
     if python not in _COVERAGE_OK:
-        p = subprocess.run([python, "-c", "import coverage, pytest"], capture_output=True, text=True, check=False)
+        p = subprocess.run([python, "-c", "import coverage, pytest"], capture_output=True, text=True, check=False,
+                           env=child_env())
         _COVERAGE_OK[python] = p.returncode == 0
     return _COVERAGE_OK[python]
 

@@ -15,6 +15,7 @@
     aftershock runs myrepo [RUN_ID]                  # recorded runs (every run/heal is stored in the graph)
     aftershock scripts myrepo list --q secrets       # the built-in script library: what applies to this repo
     aftershock scripts myrepo run                    # every applicable read-only check; name ids to run tools too
+    aftershock setup myrepo [--tools ruff mypy]      # a test interpreter with the repo's deps, then missing tools
     aftershock serve                                 # REST + /mcp on :8100
     aftershock mcp                                   # stdio MCP server for Claude Code / Cursor
 
@@ -289,11 +290,35 @@ def cmd_scripts(a) -> int:
                 loc = f["file"] + (f":{f['line']}" if f.get("line") else "")
                 print(f"      {loc}: {f['message']}", file=sys.stderr)
 
-    res = catalog.run(a.repo, ids, emit, allow_exec=True, timeout=a.timeout)
+    res = catalog.run(a.repo, ids, emit, allow_exec=True, timeout=a.timeout, trigger="cli")
     _out(catalog.brief(res) if not a.json else res, a.json,
          f"{res['passed']} passed, {res['warned']} warned, {res['failed']} failed, {res['error']} errors, "
          f"{res['skipped']} skipped in {res['seconds']:.1f}s")
     return 1 if res["failed"] or res["error"] else 0
+
+
+def cmd_setup(a) -> int:
+    """Give the repo a test interpreter (its `.venv`, or one under AFTERSHOCK_ENV_DIR) with its own test
+    requirements, pytest and coverage; with --tools, install those library tools by their fixed recipes (D29)."""
+    from . import tools as T
+    from .runtime import setup
+
+    root = Path(T._repo_props(T._graph(a.repo)).get("root") or "")
+    if not root.is_dir():
+        raise T.ToolError("the indexed checkout is no longer on disk; re-index it")
+
+    def emit(kind: str, data: dict) -> None:
+        if not a.json and (kind == "step" or a.verbose):
+            print(f"  {data.get('status', '')[:7]:<7} {data['name']}" if kind == "step" else f"    {data['line']}",
+                  file=sys.stderr)
+
+    res = {} if a.tools_only else setup.setup_env(a.repo, root, emit, timeout=a.timeout)
+    if a.tools:
+        res["tools"] = setup.install_tools(a.repo, root, a.tools, emit, timeout=a.timeout)
+    hints = [f"  {t}: {r['hint']}" for t, r in (res.get("tools") or {}).get("tools", {}).items() if r.get("hint")]
+    _out(res, a.json, "ready" + (f"; {', '.join(res['failed'])} failed" if res.get("failed") else "")
+         + ("\n" + "\n".join(hints) if hints else ""))
+    return 1 if res.get("failed") or (res.get("tools") or {}).get("failed") else 0
 
 
 def cmd_runs(a) -> int:
@@ -661,6 +686,15 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--show", type=int, default=5, help="findings to print per script")
     s.add_argument("--timeout", type=int, default=900, help="seconds per command script")
     s.set_defaults(fn=cmd_scripts)
+
+    s = sub.add_parser("setup", parents=[common],
+                       help="create a repo's test interpreter and install its test deps (runs pip), or library tools")
+    s.add_argument("repo")
+    s.add_argument("--tools", nargs="+", help="library tools to install too, e.g. ruff mypy eslint")
+    s.add_argument("--tools-only", action="store_true", help="skip the environment, only install --tools")
+    s.add_argument("--verbose", action="store_true", help="print pip/npm output")
+    s.add_argument("--timeout", type=int, default=900)
+    s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("runs", parents=[common], help="recorded test runs, or one run's failures and suspects")
     s.add_argument("repo")

@@ -36,14 +36,12 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   if (!path.length || path.some((s) => !SEGMENT.test(s) || s === "." || s === "..")) {
     return Response.json({ detail: "invalid path" }, { status: 400 });
   }
-  if (path.length === 1 && path[0] === "runtime" && !fromThisMachine(req)) {
-    return Response.json({ enabled: false, reason: "running tests is only allowed from this machine" });
+  const local = fromThisMachine(req);
+  if (path[0] === "repos" && path[2] === "runs" && path[4] === "heal" && !local) {
+    // heal edits the checkout (D25): the operator's machine only, never a showcase visitor (D29)
+    return Response.json({ detail: "healing a run is only allowed from this machine" }, { status: 403 });
   }
-  if (path[0] === "repos" && (path[2] === "run" || (path[2] === "runs" && path[4] === "heal")) && !fromThisMachine(req)) {
-    // running tests executes repo code (D18), heal also edits it (D25); the API checks too, but only sees this proxy's loopback address
-    return Response.json({ detail: "running tests is only allowed from this machine" }, { status: 403 });
-  }
-  if (path[0] === "providers" && req.method !== "GET" && !fromThisMachine(req)) {
+  if (path[0] === "providers" && req.method !== "GET" && !local) {
     // Writing a provider key (D27) is loopback-only for the same reason: the API's own check sees this proxy's
     // address, not the visitor's, so this is the guard that actually holds. GET is safe — it never returns a key.
     return Response.json(
@@ -58,6 +56,10 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     if (v) headers.set(h, v);
   }
   if (KEY) headers.set("authorization", `Bearer ${KEY}`);
+  // Running tests (D18) is otherwise refused upstream for anyone but the operator, and the API only sees this proxy's
+  // loopback address, so mark visitors as remote. The header only ever narrows: the API then allows showcase repos
+  // alone (D29), and a visitor can't send it themselves because only PASS_REQ headers cross.
+  if (!local) headers.set("x-aftershock-remote", "1");
   const hasBody = req.method === "POST" || req.method === "PUT";
   let res: Response;
   try {

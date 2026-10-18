@@ -310,6 +310,14 @@ QUERIES: dict[str, str] = {
         MATCH (:TestRun {id: $id})-[e:SUSPECTS]->(s:Symbol)
         RETURN s.id AS id, s.qname AS name, s.file AS file, s.line AS line, e.rank AS rank, e.score AS score,
                e.hops AS hops ORDER BY e.rank""",
+    # ---- script library runs (catalog, D29): one node per batch, the results as JSON ------------------------------
+    "script_run_upsert": "MERGE (r:ScriptRun {id: $id}) SET r += $props",
+    "script_run_prune": "MATCH (r:ScriptRun) WITH r ORDER BY r.started DESC, r.id DESC SKIP $keep DELETE r",
+    "script_runs": """
+        MATCH (r:ScriptRun) RETURN r.id AS id, r.started AS started, r.seconds AS seconds, r.scripts AS scripts,
+               r.passed AS passed, r.warned AS warned, r.failed AS failed, r.error AS error, r.skipped AS skipped,
+               r.stopped AS stopped, r.trigger AS trigger ORDER BY r.started DESC, r.id DESC LIMIT $limit""",
+    "script_run": "MATCH (r:ScriptRun {id: $id}) RETURN properties(r) AS run",
     "test_history": """
         MATCH (r:TestRun)-[e:RAN]->(s:Symbol) WHERE s.id IN $ids
           AND NOT (coalesce(r.trigger, '') = 'heal' AND coalesce(r.heal_step, '') <> 'initial')

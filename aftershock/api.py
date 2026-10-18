@@ -205,7 +205,7 @@ async def repos(lab: bool = False):
 
 
 @app.post(f"{v1}/repos", dependencies=auth, status_code=202)
-async def index(body: IndexBody):
+async def index(body: IndexBody, request: Request):
     if bool(body.path) == bool(body.url):
         raise T.ToolError("give exactly one of path or url")
     # Validate synchronously so bad input is a 400 now, not a failed background job later.
@@ -214,6 +214,7 @@ async def index(body: IndexBody):
         name = T.repo_name_for(root, body.name)
     else:
         name = T.check_url(body.url, body.name)
+    _showcase_lock(name, request)
     with _lock:
         if name in _indexing:
             raise HTTPException(409, f"{name} is already being indexed")
@@ -243,7 +244,8 @@ async def index(body: IndexBody):
 
 
 @app.delete(f"{v1}/repos/{{repo}}", dependencies=auth)
-async def drop(repo: str):
+async def drop(repo: str, request: Request):
+    _showcase_lock(repo, request)
     T._graph(repo)
     if repo in _indexing:
         raise HTTPException(409, "repo is being indexed")
@@ -390,17 +392,46 @@ async def tests(repo: str, body: TestsBody):
 # ---- running tests (D18) -----------------------------------------------------------------------------------------
 
 _runs: dict[str, threading.Event] = {}
+_public_runs: set[str] = set()
 MAX_RUNS = 2
 
 
-def run_refusal(request: Request) -> str | None:
-    """Why this request may not run tests, or None. Executing repo code is only for the operator's own machine."""
-    if not get_settings().allow_run:
-        return "running tests is off; start the API with AFTERSHOCK_ALLOW_RUN=1 on your own machine"
+def _local(request: Request) -> bool:
+    """The operator's own machine: a loopback peer and Host, and not a visitor the web proxy forwarded. The proxy
+    runs on the same host, so it marks remote visitors with `X-Aftershock-Remote`; that header only takes away."""
     peer = request.client.host if request.client else ""
-    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
-        return "running tests is only allowed from this machine (loopback client and Host)"
-    return None
+    return (peer in _LOOPBACK and _host_name(request.headers.get("host", "")) in _LOOPBACK
+            and not request.headers.get("x-aftershock-remote"))
+
+
+def _public(request: Request, repo: str | None) -> bool:
+    """True when this request may run only because `repo` is a showcase repo (D29): capped and one at a time."""
+    s = get_settings()
+    return not (s.allow_run and _local(request)) and repo is not None and repo in s.showcase()
+
+
+def run_refusal(request: Request, repo: str | None = None) -> str | None:
+    """Why this request may not run tests, or None. Executing repo code is for the operator's own machine, and for
+    the showcase repos the operator put on the server (D29). Leaving `repo` out asks for the operator gate only."""
+    s = get_settings()
+    if s.allow_run and _local(request):
+        return None
+    if repo is not None and repo in s.showcase():
+        return None
+    if not s.allow_run:
+        hint = f"; on this server you can run {', '.join(sorted(s.showcase()))}" if s.showcase() else ""
+        return f"running tests is off; start the API with AFTERSHOCK_ALLOW_RUN=1 on your own machine{hint}"
+    return "running tests is only allowed from this machine (loopback client and Host)"
+
+
+def _showcase_lock(repo: str, request: Request) -> None:
+    """A showcase repo runs for anyone, so nobody but the operator may replace, drop or extend what it contains."""
+    if repo in get_settings().showcase() and not _local(request):
+        raise HTTPException(403, f"{repo} is a showcase repo on this server; only the operator can change it")
+
+
+def _timeout(request: Request, repo: str, asked: int) -> int:
+    return min(asked, get_settings().public_run_timeout) if _public(request, repo) else asked
 
 
 class RunBody(BaseModel):
@@ -411,9 +442,12 @@ class RunBody(BaseModel):
 
 
 @app.get(f"{v1}/runtime", dependencies=auth)
-async def runtime_status(request: Request):
-    why = run_refusal(request)
-    return {"enabled": why is None, "reason": why}
+async def runtime_status(request: Request, repo: str | None = Query(None, max_length=100)):
+    """Whether this caller may run tests, for `repo` when given. `public` means a capped showcase run (D29)."""
+    why = run_refusal(request, repo)
+    return {"enabled": why is None, "reason": why, "public": why is None and _public(request, repo),
+            "timeout": get_settings().public_run_timeout if _public(request, repo) else None,
+            "showcase": sorted(get_settings().showcase())}
 
 
 @app.post(f"{v1}/repos/{{repo}}/run/stream", dependencies=auth)
@@ -422,8 +456,9 @@ async def run_stream(repo: str, body: RunBody, request: Request):
     The run is recorded in the graph; `done` carries its `run_id`."""
     from .runtime import jobs
 
+    timeout = _timeout(request, repo, body.timeout)
     return _job_stream(repo, request, "run", lambda emit, cancel: jobs.run_tests(
-        repo, body.mode, emit, targets=body.targets, rev=body.rev, cancel=cancel, timeout=body.timeout))
+        repo, body.mode, emit, targets=body.targets, rev=body.rev, cancel=cancel, timeout=timeout))
 
 
 class HealBody(BaseModel):
@@ -444,39 +479,43 @@ async def heal_stream(repo: str, run_id: str, body: HealBody, request: Request):
     # rather than a 400 that tells them their id was malformed. Validating
     # input ahead of authorisation is how a gate starts answering questions
     # for people who have not passed it.
-    if why := run_refusal(request):
+    if why := run_refusal(request):  # no repo: heal edits the checkout, so showcase repos don't open it (D29)
         raise HTTPException(403, why)
     if not T.RUN_ID.match(run_id):
         raise HTTPException(400, "invalid run id")
     return _job_stream(repo, request, "heal", lambda emit, cancel: jobs.heal_run(
-        repo, run_id, emit, max_rounds=body.max_rounds, timeout=body.timeout), stop_on_leave=False)
+        repo, run_id, emit, max_rounds=body.max_rounds, timeout=body.timeout), stop_on_leave=False, gated=False)
 
 
-def _claim(repo: str, cancel: threading.Event) -> tuple[int, str] | None:
-    """Take the repo's run slot, or return (status, why not). Runs, heals and command scripts share it."""
+def _claim(repo: str, cancel: threading.Event, public: bool = False) -> tuple[int, str] | None:
+    """Take the repo's run slot, or return (status, why not). Runs, heals and command scripts share it. A public
+    (showcase) run also takes the single public slot, so visitors can't stack runs on a small server."""
     with _lock:
         if repo in _runs:
             return 409, f"a test run for {repo} is already in progress"
-        if len(_runs) >= MAX_RUNS:
+        if len(_runs) >= MAX_RUNS or (public and _public_runs):
             return 429, "too many test runs in progress; try again shortly"
         _runs[repo] = cancel
+        if public:
+            _public_runs.add(repo)
     return None
 
 
 def _release(repo: str) -> None:
     with _lock:
         _runs.pop(repo, None)
+        _public_runs.discard(repo)
 
 
 def _job_stream(repo: str, request: Request, what: str, job, *, stop_on_leave: bool = True,
                 gated: bool = True) -> StreamingResponse:
     """Run `job(emit, cancel)` on a thread, one per repo, and stream what it emits as SSE, ending with `end`.
     `gated=False` is only for jobs that execute nothing (read-only scripts); they still take the slot."""
-    if gated and (why := run_refusal(request)):
+    if gated and (why := run_refusal(request, repo)):
         raise HTTPException(403, why)
     T._graph(repo)
     cancel = threading.Event()
-    if busy := _claim(repo, cancel):
+    if busy := _claim(repo, cancel, public=gated and _public(request, repo)):
         raise HTTPException(*busy, headers={"Retry-After": "10"} if busy[0] == 429 else None)
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -547,17 +586,19 @@ class LibraryBody(BaseModel):
 
 
 @app.post(f"{v1}/repos/{{repo}}/libraries", dependencies=auth)
-async def library_add(repo: str, body: LibraryBody):
+async def library_add(repo: str, body: LibraryBody, request: Request):
     """Register an external pytest directory with the repo, so its tests are indexed, selected and run alongside.
 
     The path goes through the same `allowed_path` guard as indexing, so it cannot escape AFTERSHOCK_REPO_ROOTS.
     This records the directory; the repo must be re-indexed before its tests appear in the graph.
     """
+    _showcase_lock(repo, request)
     return await call(T.library_set, repo, body.name, body.path)
 
 
 @app.delete(f"{v1}/repos/{{repo}}/libraries/{{name}}", dependencies=auth)
-async def library_remove(repo: str, name: str):
+async def library_remove(repo: str, name: str, request: Request):
+    _showcase_lock(repo, request)
     return await call(T.library_set, repo, name, None)
 
 
@@ -573,8 +614,8 @@ async def scripts_list(repo: str, request: Request, q: str | None = Query(None, 
     from . import catalog
 
     out = await call(catalog.listing, repo, q=q, category=category, ecosystem=ecosystem, applicable_only=applicable)
-    why = run_refusal(request)
-    return {**out, "can_exec": why is None, "exec_reason": why}
+    why = run_refusal(request, repo)
+    return {**out, "can_exec": why is None, "exec_reason": why, "public": why is None and _public(request, repo)}
 
 
 class ScriptsBody(BaseModel):
@@ -590,7 +631,7 @@ async def scripts_run_stream(repo: str, body: ScriptsBody, request: Request):
 
     catalog.scripts()  # loads the registry
     # As on heal, the gate comes before id validation: a refused caller learns nothing from a bad id but a 403.
-    if (why := run_refusal(request)) and any(
+    if (why := run_refusal(request, repo)) and any(
             (s := catalog.REGISTRY.get(i)) is None or s.executes for i in body.ids):
         raise HTTPException(403, why)
     try:
@@ -599,10 +640,69 @@ async def scripts_run_stream(repo: str, body: ScriptsBody, request: Request):
         raise HTTPException(404, str(e)) from e
     except T.ToolError as e:
         raise HTTPException(400, str(e)) from e
+    # local_only scripts spend model credit or write to the checkout: the showcase opening does not cover them
+    if (local := [s.id for s in chosen if s.local_only]) and (why := run_refusal(request)):
+        raise HTTPException(403, f"{', '.join(local)}: operator only. {why}")
     executes = any(s.executes for s in chosen)
+    timeout = _timeout(request, repo, body.timeout)
     return _job_stream(repo, request, "scripts", lambda emit, cancel: catalog.run(
-        repo, [s.id for s in chosen], emit, allow_exec=executes, cancel=cancel, timeout=body.timeout),
+        repo, [s.id for s in chosen], emit, allow_exec=executes, cancel=cancel, timeout=timeout, trigger="web"),
         gated=executes)
+
+
+@app.get(f"{v1}/repos/{{repo}}/scripts/runs", dependencies=auth)
+async def script_runs(repo: str, limit: int = Query(10, ge=1, le=20)):
+    """Recorded script-library batches, newest first (D29)."""
+    from . import catalog
+
+    return await call(catalog.history, repo, limit)
+
+
+@app.get(f"{v1}/repos/{{repo}}/scripts/runs/{{run_id}}", dependencies=auth)
+async def script_run(repo: str, run_id: str):
+    from . import catalog
+
+    if not T.RUN_ID.match(run_id):
+        raise HTTPException(400, "invalid run id")
+    return await call(catalog.recorded, repo, run_id)
+
+
+class SetupBody(BaseModel):
+    timeout: int = Field(900, ge=30, le=3600)
+
+
+class ToolsBody(BaseModel):
+    tools: list[str] = Field(..., min_length=1, max_length=20)
+    timeout: int = Field(900, ge=30, le=3600)
+
+
+@app.post(f"{v1}/repos/{{repo}}/setup/stream", dependencies=auth)
+async def setup_stream(repo: str, body: SetupBody, request: Request):
+    """Give the repo a test interpreter with its own test requirements, pytest and coverage (D29). This installs
+    packages and runs the repo's build backend, so it sits behind the run gate. Streams step, output, done."""
+    from . import catalog
+    from .runtime import setup
+
+    timeout = min(body.timeout, 900) if _public(request, repo) else body.timeout
+    return _job_stream(repo, request, "setup", lambda emit, cancel: setup.setup_env(
+        repo, catalog._checkout(repo)[1], emit, cancel, timeout), stop_on_leave=False)
+
+
+@app.post(f"{v1}/repos/{{repo}}/tools/install/stream", dependencies=auth)
+async def tools_install_stream(repo: str, body: ToolsBody, request: Request):
+    """Install library tools by their fixed recipes (pip into the repo's interpreter, npm into Aftershock's tool
+    prefix). Names outside the recipe list are refused; system tools come back as a command for the operator."""
+    from . import catalog
+    from .runtime import setup
+
+    if why := run_refusal(request, repo):  # the gate before the name check, as on scripts
+        raise HTTPException(403, why)
+    if bad := sorted({t for t in body.tools if t not in setup.RECIPES}):
+        raise HTTPException(400, f"no install recipe for {', '.join(bad[:5])}")
+    timeout = min(body.timeout, 900) if _public(request, repo) else body.timeout
+    return _job_stream(repo, request, "install", lambda emit, cancel: setup.install_tools(
+        repo, catalog._checkout(repo)[1], list(dict.fromkeys(body.tools)), emit, cancel, timeout),
+        stop_on_leave=False)
 
 
 def _script_runner(repo: str, request: Request):
@@ -617,7 +717,7 @@ def _script_runner(repo: str, request: Request):
         if busy := _claim(repo, cancel):
             raise T.ToolError(busy[1])
         try:
-            return catalog.brief(catalog.run(repo, ids, allow_exec=True, cancel=cancel, timeout=600))
+            return catalog.brief(catalog.run(repo, ids, allow_exec=True, cancel=cancel, timeout=600, trigger="ask"))
         finally:
             _release(repo)
 
@@ -650,8 +750,7 @@ async def provider_set(provider_id: str, body: ProviderKeyBody, request: Request
 
     if provider_id not in providers.BY_ID:
         raise HTTPException(404, "unknown provider")
-    peer = request.client.host if request.client else ""
-    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
+    if not _local(request):
         raise HTTPException(403, "keys can only be set from the machine the API runs on; use the environment "
                                  "variable on a shared deployment")
     try:
@@ -667,8 +766,7 @@ async def provider_clear(provider_id: str, request: Request):
 
     if provider_id not in providers.BY_ID:
         raise HTTPException(404, "unknown provider")
-    peer = request.client.host if request.client else ""
-    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
+    if not _local(request):
         raise HTTPException(403, "keys can only be cleared from the machine the API runs on")
     providers.clear_key(provider_id)
     return {"ok": True, "provider": provider_id}
