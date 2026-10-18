@@ -1,12 +1,44 @@
 "use client";
 
+/**
+ * Explore: one symbol or one file, and everything the graph knows about it.
+ *
+ * This is the reference page the others link *into* — from an impact list, a
+ * path hop, a suspect. So it is built to be landed on cold: the identity line
+ * says what the thing is, the metrics say how load-bearing it is, and the two
+ * neighbour lists say what sits on either side of it.
+ *
+ * Every neighbour carries how the edge was resolved and how confident the
+ * resolver is. A call graph that does not admit which of its edges are guesses
+ * is the thing that makes people stop trusting a tool like this.
+ *
+ * The empty state is not a blank slate. Landing here with nothing selected is
+ * the most common way in, so it offers the two starting points that are almost
+ * always right: the symbols most paths run through, and the files that keep
+ * changing.
+ */
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { Code, FileCode, Flow, Search, TestTube, Users, Zap } from "@/components/icons";
+import {
+  Chip,
+  Empty,
+  ErrorNote,
+  Grid,
+  Kbd,
+  Metric,
+  Mono,
+  Page,
+  PageHeader,
+  Panel,
+  Spinner,
+  Stack,
+} from "@/components/ds";
 import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
-import { Empty, ErrorNote, FileLink, Page, PageHeader, Receipts, Spinner, Stat, SymLink, Tile } from "@/components/kit";
+import { Code, FileCode, Flow, Search, TestTube, Users, Zap } from "@/components/icons";
+import { FileLink, Receipts, SymLink } from "@/components/kit";
 import { repoHref } from "@/components/shell/nav";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
@@ -14,18 +46,33 @@ import { api, type FileDetail, type Neighbor, type SymbolBrief, type SymbolDetai
 import { HOW, num, pct, relTime, splitId, symName } from "@/lib/format";
 import { useModKey, useQuery, useRepo } from "@/lib/hooks";
 
+/** Six numbers across the top of a symbol or file. The shape is identical for both so the eye does not have to re-learn it. */
+function Metrics({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface-raised p-4 sm:grid-cols-3 lg:grid-cols-6">
+      {children}
+    </div>
+  );
+}
+
 function NeighborList({ repo, items, empty }: { repo: string; items: Neighbor[]; empty: string }) {
-  if (!items.length) return <p className="p-2 text-sm text-muted-foreground">{empty}</p>;
+  if (!items.length) return <p className="p-2 text-body-sm text-ink-muted">{empty}</p>;
   return (
     <ul className="space-y-0.5">
       {items.map((n) => (
-        <li key={`${n.id}:${n.type}`} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/[0.03]">
-          <SymLink repo={repo} id={n.id} name={n.name} className="min-w-0 truncate text-[12.5px]" />
-          {n.type !== "CALLS" && <span className="rounded bg-white/5 px-1 text-[11px] text-fog">{n.type.toLowerCase()}</span>}
-          <span className="ml-auto shrink-0 font-mono text-[10.5px] text-fog">
+        <li key={`${n.id}:${n.type}`} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+          <SymLink repo={repo} id={n.id} name={n.name} className="min-w-0 truncate text-caption" />
+          {/* Only non-call edges are labelled: CALLS is the default reading, and
+              tagging every row with it would bury the inheritance edges. */}
+          {n.type !== "CALLS" && (
+            <Chip size="sm" tone="neutral">
+              {n.type.toLowerCase()}
+            </Chip>
+          )}
+          <Mono className="ml-auto shrink-0 text-micro text-ink-faint">
             {n.how ? (HOW[n.how] ?? n.how) : ""}
             {n.confidence !== undefined ? ` · ${pct(n.confidence)}` : ""}
-          </span>
+          </Mono>
         </li>
       ))}
     </ul>
@@ -40,8 +87,10 @@ function SymbolView({ repo, d }: { repo: string; d: SymbolDetail }) {
     const add = (id: string, label: string, file: string, tone: string, group: string) =>
       ns.has(id) || ns.set(id, { id, label, sub: file, tone, group, emphasis: id === s.id });
     add(s.id, s.qname, `${s.file}:${s.line}`, "bg-brand", "1");
-    d.callers.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-signal-teal", "0"));
-    d.callees.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-smoke", "2"));
+    // Capped at 24 a side: beyond that the layout is a hairball and the lists
+    // below are the better way to read it. The panel header says so.
+    d.callers.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-info", "0"));
+    d.callees.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-line-loud", "2"));
     const es: GEdge[] = [
       ...d.callers.slice(0, 24).map((c) => ({ src: c.id, dst: s.id, dashed: c.type !== "CALLS" })),
       ...d.callees.slice(0, 24).map((c) => ({ src: s.id, dst: c.id, dashed: c.type !== "CALLS" })),
@@ -49,66 +98,103 @@ function SymbolView({ repo, d }: { repo: string; d: SymbolDetail }) {
     return { nodes: [...ns.values()], edges: es };
   }, [d, s]);
 
+  const shown = Math.min(24, d.callers.length) + Math.min(24, d.callees.length);
+  const total = d.callers.length + d.callees.length;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="font-mono text-2xl text-paper">{symName(s.qname)}</h2>
-        <span className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-fog">{s.kind}</span>
-        {s.is_test && <TestTube className="size-4 text-signal-teal" aria-label="test" />}
-        <FileLink repo={repo} path={s.file} line={s.line} className="text-xs" />
+    <Stack className="gap-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        <h2 className="font-mono text-subheading text-ink-strong">{symName(s.qname)}</h2>
+        <Chip tone="neutral">{s.kind}</Chip>
+        {s.is_test && (
+          <Chip tone="info">
+            <TestTube className="size-3.5" aria-hidden /> test
+          </Chip>
+        )}
+        <FileLink repo={repo} path={s.file} line={s.line} className="text-caption" />
         <div className="ml-auto flex gap-2">
-          <Button asChild variant="outline" size="sm" className="h-7 text-xs">
+          <Button asChild variant="outline" size="sm">
             <Link href={repoHref(repo, `/impact?t=${encodeURIComponent(s.id)}&change=signature`)}>
-              <Zap className="size-3.5" /> Impact
+              <Zap className="size-3.5" aria-hidden /> Impact
             </Link>
           </Button>
-          <Button asChild variant="outline" size="sm" className="h-7 text-xs">
+          <Button asChild variant="outline" size="sm">
             <Link href={repoHref(repo, `/path?from=${encodeURIComponent(s.id)}`)}>
-              <Flow className="size-3.5" /> Path from here
+              <Flow className="size-3.5" aria-hidden /> Path from here
             </Link>
           </Button>
         </div>
       </div>
-      {s.signature && <pre className="overflow-x-auto rounded-lg border border-graphite bg-void px-4 py-3 font-mono text-[13px] text-mist">{s.signature}</pre>}
-      {s.doc && <p className="max-w-3xl text-sm whitespace-pre-line text-muted-foreground">{s.doc}</p>}
 
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-card/50 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Callers" value={num(s.fan_in)} />
-        <Stat label="Callees" value={num(s.fan_out)} />
-        <Stat label="Lines" value={num(s.loc)} hint={`${s.line}–${s.end_line}`} />
-        <Stat label="Complexity" value={num(s.complexity)} />
-        <Stat label="PageRank" value={s.pagerank !== undefined ? (s.pagerank * 1000).toFixed(2) : "—"} hint="× 10⁻³" />
-        <Stat label="Betweenness" value={num(s.betweenness)} />
-      </div>
+      {s.signature && (
+        <pre className="overflow-x-auto rounded-panel border border-line bg-ground px-4 py-3 font-mono text-code text-ink">
+          {s.signature}
+        </pre>
+      )}
+      {s.doc && <p className="max-w-3xl text-body-sm leading-relaxed whitespace-pre-line text-ink-muted">{s.doc}</p>}
+
+      <Metrics>
+        <Metric size="sm" label="Callers" value={num(s.fan_in)} />
+        <Metric size="sm" label="Callees" value={num(s.fan_out)} />
+        <Metric size="sm" label="Lines" value={num(s.loc)} hint={`${s.line}–${s.end_line}`} />
+        <Metric size="sm" label="Complexity" value={num(s.complexity)} />
+        <Metric
+          size="sm"
+          label="PageRank"
+          value={s.pagerank !== undefined ? (s.pagerank * 1000).toFixed(2) : "—"}
+          hint="× 10⁻³"
+        />
+        <Metric size="sm" label="Betweenness" value={num(s.betweenness)} />
+      </Metrics>
+
       {(s.bases?.length || s.decorators?.length) && (
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="flex flex-wrap gap-2">
           {s.bases?.map((b) => (
-            <span key={b} className="rounded border border-graphite px-2 py-0.5 font-mono text-fog">
+            <Chip key={b} tone="neutral">
               extends {b}
-            </span>
+            </Chip>
           ))}
           {s.decorators?.map((b) => (
-            <span key={b} className="rounded border border-graphite px-2 py-0.5 font-mono text-fog">
+            <Chip key={b} tone="neutral">
               @{b}
-            </span>
+            </Chip>
           ))}
         </div>
       )}
 
       {nodes.length > 1 && (
-        <Tile title="Neighbourhood" action={<span className="text-[11px] text-fog">callers left · callees right · click to walk</span>} bodyClassName="p-3">
-          <GraphCanvas nodes={nodes} edges={edges} height={380} selected={s.id} onSelect={(id) => id !== s.id && router.push(repoHref(repo, `/explore?ref=${encodeURIComponent(id)}`))} />
-        </Tile>
+        <Panel
+          title="Neighbourhood"
+          note={
+            shown < total
+              ? `Callers left, callees right; click a node to walk to it. Showing ${shown} of ${total} — the lists below have all of them.`
+              : "Callers left, callees right; click a node to walk to it."
+          }
+          bodyClassName="p-3"
+        >
+          <GraphCanvas
+            nodes={nodes}
+            edges={edges}
+            height={380}
+            selected={s.id}
+            onSelect={(id) => id !== s.id && router.push(repoHref(repo, `/explore?ref=${encodeURIComponent(id)}`))}
+          />
+        </Panel>
       )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Tile title={`Callers · ${d.callers.length}`} bodyClassName="max-h-96 overflow-y-auto p-2">
-          <NeighborList repo={repo} items={d.callers} empty="No resolved caller. It may be an entry point, called dynamically, or dead." />
-        </Tile>
-        <Tile title={`Callees · ${d.callees.length}`} bodyClassName="max-h-96 overflow-y-auto p-2">
+
+      <Grid cols={2}>
+        <Panel title={`Callers · ${num(d.callers.length)}`} bodyClassName="max-h-96 overflow-y-auto p-2">
+          <NeighborList
+            repo={repo}
+            items={d.callers}
+            empty="No resolved caller. It may be an entry point, called dynamically, or dead."
+          />
+        </Panel>
+        <Panel title={`Callees · ${num(d.callees.length)}`} bodyClassName="max-h-96 overflow-y-auto p-2">
           <NeighborList repo={repo} items={d.callees} empty="Calls nothing the resolver could bind inside this repo." />
-        </Tile>
-      </div>
-    </div>
+        </Panel>
+      </Grid>
+    </Stack>
   );
 }
 
@@ -116,59 +202,76 @@ function FileView({ repo, d }: { repo: string; d: FileDetail }) {
   const f = d.file;
   const syms = d.symbols.filter((s) => s.kind !== "module");
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="font-mono text-2xl break-all text-paper">{f.path}</h2>
-        <span className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-fog">{f.lang}</span>
-        {f.is_test && <TestTube className="size-4 text-signal-teal" aria-label="test file" />}
-        <Button asChild variant="outline" size="sm" className="ml-auto h-7 text-xs">
+    <Stack className="gap-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        <h2 className="font-mono text-subheading break-all text-ink-strong">{f.path}</h2>
+        <Chip tone="neutral">{f.lang}</Chip>
+        {f.is_test && (
+          <Chip tone="info">
+            <TestTube className="size-3.5" aria-hidden /> test file
+          </Chip>
+        )}
+        <Button asChild variant="outline" size="sm" className="ml-auto">
           <Link href={repoHref(repo, `/impact?t=${encodeURIComponent(f.path)}&change=body`)}>
-            <Zap className="size-3.5" /> Impact of this file
+            <Zap className="size-3.5" aria-hidden /> Impact of this file
           </Link>
         </Button>
       </div>
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-card/50 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Lines" value={num(f.loc)} />
-        <Stat label="Symbols" value={num(syms.length)} />
-        <Stat label="Commits" value={num(f.commits)} />
-        <Stat label="Churn" value={num(f.churn)} hint="lines added + deleted" />
-        <Stat label="Authors" value={num(f.authors)} />
-        <Stat label="Last change" value={relTime(f.last_change)} />
-      </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        <Tile title={`Symbols · ${syms.length}`} bodyClassName="max-h-[520px] overflow-y-auto p-2">
+
+      <Metrics>
+        <Metric size="sm" label="Lines" value={num(f.loc)} />
+        <Metric size="sm" label="Symbols" value={num(syms.length)} />
+        <Metric size="sm" label="Commits" value={num(f.commits)} />
+        <Metric size="sm" label="Churn" value={num(f.churn)} hint="lines added + deleted" />
+        <Metric size="sm" label="Authors" value={num(f.authors)} />
+        <Metric size="sm" label="Last change" value={relTime(f.last_change)} />
+      </Metrics>
+
+      <Grid cols="main-aside">
+        <Panel title={`Symbols · ${num(syms.length)}`} bodyClassName="max-h-[520px] overflow-y-auto p-2">
           <ul className="space-y-0.5">
             {syms
               .sort((a, b) => a.line - b.line)
               .map((s) => (
-                <li key={s.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/[0.03]">
-                  <span className="w-10 shrink-0 text-right font-mono text-[11px] text-fog">{s.line}</span>
-                  <SymLink repo={repo} id={s.id} name={s.qname} className="min-w-0 truncate text-[12.5px]" />
-                  <span className="ml-auto shrink-0 text-[10.5px] text-fog">{s.kind}</span>
-                  {s.fan_in !== undefined && <span className="w-12 shrink-0 text-right font-mono text-[10.5px] text-fog">{s.fan_in}↙</span>}
+                <li key={s.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+                  <Mono className="w-10 shrink-0 text-right text-micro text-ink-faint">{s.line}</Mono>
+                  <SymLink repo={repo} id={s.id} name={s.qname} className="min-w-0 truncate text-caption" />
+                  <span className="ml-auto shrink-0 text-micro text-ink-faint">{s.kind}</span>
+                  {s.fan_in !== undefined && (
+                    <Mono className="w-12 shrink-0 text-right text-micro text-ink-muted">
+                      <span aria-hidden>{s.fan_in}↙</span>
+                      <span className="sr-only">{s.fan_in} callers</span>
+                    </Mono>
+                  )}
                 </li>
               ))}
           </ul>
-        </Tile>
-        <div className="space-y-4">
-          <Tile title={`Imports · ${d.imports.length}`} bodyClassName="max-h-56 overflow-y-auto p-2">
+        </Panel>
+
+        <Stack className="min-w-0 gap-4">
+          <Panel title={`Imports · ${num(d.imports.length)}`} bodyClassName="max-h-56 overflow-y-auto p-2">
             {d.imports.length ? (
-              <ul className="space-y-0.5 text-xs">
+              <ul className="space-y-0.5 text-caption">
                 {d.imports.map((i) => (
                   <li key={i.path} className="truncate px-2 py-0.5">
                     <FileLink repo={repo} path={i.path} />
-                    {i.names?.length ? <span className="ml-2 font-mono text-[10.5px] text-fog">{i.names.slice(0, 6).join(", ")}</span> : null}
+                    {i.names?.length ? (
+                      <Mono className="ml-2 text-micro text-ink-faint">{i.names.slice(0, 6).join(", ")}</Mono>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No in-repo imports.</p>
+              <p className="p-2 text-body-sm text-ink-muted">No in-repo imports.</p>
             )}
-            {d.externals.length > 0 && <p className="mt-2 px-2 font-mono text-[11px] text-fog">external: {d.externals.join(", ")}</p>}
-          </Tile>
-          <Tile title={`Imported by · ${d.importers.length}`} bodyClassName="max-h-56 overflow-y-auto p-2">
+            {d.externals.length > 0 && (
+              <Mono className="mt-2 block px-2 text-micro text-ink-faint">external: {d.externals.join(", ")}</Mono>
+            )}
+          </Panel>
+
+          <Panel title={`Imported by · ${num(d.importers.length)}`} bodyClassName="max-h-56 overflow-y-auto p-2">
             {d.importers.length ? (
-              <ul className="space-y-0.5 text-xs">
+              <ul className="space-y-0.5 text-caption">
                 {d.importers.map((i) => (
                   <li key={i.path} className="truncate px-2 py-0.5">
                     <FileLink repo={repo} path={i.path} />
@@ -176,63 +279,68 @@ function FileView({ repo, d }: { repo: string; d: FileDetail }) {
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">Nothing in the repo imports this file.</p>
+              <p className="p-2 text-body-sm text-ink-muted">Nothing in the repo imports this file.</p>
             )}
-          </Tile>
-          <Tile title="Changes with" bodyClassName="p-2">
+          </Panel>
+
+          <Panel
+            title="Changes with"
+            note="Mined from git history, not from the call graph — these files have no edge between them."
+            bodyClassName="p-2"
+          >
             {d.cochange.length ? (
-              <ul className="space-y-0.5 text-xs">
+              <ul className="space-y-0.5 text-caption">
                 {d.cochange.slice(0, 8).map((c) => (
                   <li key={c.path} className="flex items-center gap-2 px-2 py-0.5">
                     <FileLink repo={repo} path={c.path} className="min-w-0 truncate" />
-                    <span className="ml-auto shrink-0 font-mono text-[10.5px] text-fog">
+                    <Mono className="ml-auto shrink-0 text-micro text-ink-faint">
                       {c.count}× · {pct(c.strength)}
-                    </span>
+                    </Mono>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No co-change partner in the mined history.</p>
+              <p className="p-2 text-body-sm text-ink-muted">No co-change partner in the mined history.</p>
             )}
-          </Tile>
-          <Tile title="Owners" bodyClassName="p-2">
+          </Panel>
+
+          <Panel title="Owners" bodyClassName="p-2">
             {d.owners.length ? (
-              <ul className="space-y-0.5 text-xs">
+              <ul className="space-y-0.5 text-caption">
                 {d.owners.slice(0, 5).map((o) => (
                   <li key={o.email} className="flex items-center gap-2 px-2 py-0.5">
-                    <Users className="size-3.5 text-fog" aria-hidden />
-                    <span className="text-paper" title={o.email}>
-                      {o.name}
-                    </span>
-                    <span className="ml-auto font-mono text-[10.5px] text-fog">{num(o.commits)} commits</span>
+                    <Users className="size-3.5 text-ink-faint" aria-hidden />
+                    <span className="text-ink-strong">{o.name}</span>
+                    <Mono className="ml-auto text-micro text-ink-faint">{num(o.commits)} commits</Mono>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No git history indexed.</p>
+              <p className="p-2 text-body-sm text-ink-muted">No git history indexed.</p>
             )}
-          </Tile>
-        </div>
-      </div>
-    </div>
+          </Panel>
+        </Stack>
+      </Grid>
+    </Stack>
   );
 }
 
+/** The name was ambiguous — two `run`s in two modules. Disambiguating is the reader's call, not a guess. */
 function Candidates({ repo, items }: { repo: string; items: SymbolBrief[] }) {
   return (
-    <Tile title={`${items.length} matches: pick one`} bodyClassName="p-2">
+    <Panel title={`${items.length} symbols share that name`} note="Pick the one you meant." bodyClassName="p-2">
       <ul className="space-y-0.5">
         {items.map((c) => (
-          <li key={c.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/[0.03]">
-            <Code className="size-3.5 text-fog" />
-            <SymLink repo={repo} id={c.id} name={c.qname} className="text-[12.5px]" />
-            <span className="ml-auto font-mono text-[11px] text-fog">
+          <li key={c.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+            <Code className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
+            <SymLink repo={repo} id={c.id} name={c.qname} className="text-caption" />
+            <Mono className="ml-auto text-micro text-ink-faint">
               {c.kind} · {c.file}:{c.line}
-            </span>
+            </Mono>
           </li>
         ))}
       </ul>
-    </Tile>
+    </Panel>
   );
 }
 
@@ -241,36 +349,61 @@ function Suggestions({ repo }: { repo: string }) {
   const mod = useModKey();
   const central = q.data?.central.slice(0, 8) ?? [];
   const hot = q.data?.hotspots.slice(0, 6) ?? [];
-  const chip = "inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-graphite px-3 py-1 font-mono text-xs text-mist transition-colors hover:border-smoke hover:text-paper";
+  const chip =
+    "inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-line px-3 py-1 font-mono text-caption text-ink transition-colors hover:border-line-loud hover:text-ink-strong";
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        <Search className="mr-1.5 inline size-4 align-[-3px] text-fog" aria-hidden />
-        Search above, or start from one of these. Press <kbd className="font-mono text-paper">{mod === "⌘" ? "⌘K" : "Ctrl K"}</kbd> anywhere to jump.
+    <Stack className="gap-4">
+      <p className="flex flex-wrap items-center gap-1.5 text-body-sm text-ink-muted">
+        <Search className="size-4 text-ink-faint" aria-hidden />
+        Search above, or start from one of these. Press <Kbd>{mod}</Kbd>
+        <Kbd>K</Kbd> anywhere to jump.
       </p>
       {q.error ? (
         <ErrorNote error={q.error} onRetry={q.reload} />
       ) : !q.data ? (
         <Spinner label="Finding good starting points" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Tile title="Load-bearing symbols" action={<span className="text-[11px] text-fog">most paths run through them</span>} bodyClassName="flex flex-wrap gap-2 p-3">
-            {central.length ? central.map((c) => (
-              <Link key={c.id} href={repoHref(repo, `/explore?ref=${encodeURIComponent(c.id)}`)} className={chip} title={`${c.file}:${c.line}`}>
-                <Code className="size-3.5 shrink-0 text-brand" aria-hidden /> {symName(c.qname)}
-              </Link>
-            )) : <p className="text-sm text-muted-foreground">No call graph yet.</p>}
-          </Tile>
-          <Tile title="Hotspot files" action={<span className="text-[11px] text-fog">change often · complex</span>} bodyClassName="flex flex-wrap gap-2 p-3">
-            {hot.length ? hot.map((h) => (
-              <Link key={h.path} href={repoHref(repo, `/explore?file=${encodeURIComponent(h.path)}`)} className={chip}>
-                <FileCode className="size-3.5 shrink-0 text-signal-teal" aria-hidden /> {h.path}
-              </Link>
-            )) : <p className="text-sm text-muted-foreground">No git history indexed.</p>}
-          </Tile>
-        </div>
+        <Grid cols={2}>
+          <Panel
+            title="Load-bearing symbols"
+            note="Ranked by betweenness: most paths through the graph run through these."
+            bodyClassName="flex flex-wrap gap-2 p-3"
+          >
+            {central.length ? (
+              central.map((c) => (
+                <Link
+                  key={c.id}
+                  href={repoHref(repo, `/explore?ref=${encodeURIComponent(c.id)}`)}
+                  className={chip}
+                  // The file:line disambiguates two same-named symbols, and the
+                  // link text alone cannot carry it without wrecking the chip.
+                  title={`${c.file}:${c.line}`}
+                >
+                  <Code className="size-3.5 shrink-0 text-brand" aria-hidden /> {symName(c.qname)}
+                </Link>
+              ))
+            ) : (
+              <p className="text-body-sm text-ink-muted">No call graph yet.</p>
+            )}
+          </Panel>
+          <Panel
+            title="Hotspot files"
+            note="Change often and are complex — where regressions tend to come from."
+            bodyClassName="flex flex-wrap gap-2 p-3"
+          >
+            {hot.length ? (
+              hot.map((h) => (
+                <Link key={h.path} href={repoHref(repo, `/explore?file=${encodeURIComponent(h.path)}`)} className={chip}>
+                  <FileCode className="size-3.5 shrink-0 text-info" aria-hidden /> {h.path}
+                </Link>
+              ))
+            ) : (
+              <p className="text-body-sm text-ink-muted">No git history indexed.</p>
+            )}
+          </Panel>
+        </Grid>
       )}
-    </div>
+    </Stack>
   );
 }
 
@@ -281,35 +414,58 @@ export default function ExplorePage() {
   const ref = sp.get("ref") ?? "";
   const file = sp.get("file") ?? "";
   const [pick, setPick] = useState<string[]>([]);
-  const q = useQuery(ref || file ? `explore:${repo}:${ref}:${file}` : null, () => (file ? api.file(repo, file) : api.symbol(repo, ref)));
+  const q = useQuery(ref || file ? `explore:${repo}:${ref}:${file}` : null, () =>
+    file ? api.file(repo, file) : api.symbol(repo, ref),
+  );
   const d = q.data;
 
   const open = (v: string[]) => {
     setPick([]);
     const x = v[v.length - 1];
     if (!x) return;
-    router.push(repoHref(repo, x.includes("::") || !x.includes("/") ? `/explore?ref=${encodeURIComponent(x)}` : `/explore?file=${encodeURIComponent(x)}`));
+    // A symbol id carries `::`; anything with a slash and no `::` is a path.
+    router.push(
+      repoHref(
+        repo,
+        x.includes("::") || !x.includes("/")
+          ? `/explore?ref=${encodeURIComponent(x)}`
+          : `/explore?file=${encodeURIComponent(x)}`,
+      ),
+    );
   };
 
   return (
     <Page>
-      <PageHeader title="Explore" sub="Any symbol or file: its signature, who calls it, what it calls, what changes with it and who owns it.">
+      <PageHeader
+        title="Explore"
+        sub="Any symbol or file: its signature, who calls it, what it calls, what changes with it and who owns it. Every edge shows how it was resolved."
+      >
         {d && "receipts" in d && <Receipts r={(d as SymbolDetail).receipts} />}
       </PageHeader>
+
       <div className="mb-6 max-w-2xl">
-        <SymbolPicker repo={repo} value={pick} onChange={open} multiple={false} placeholder="Jump to a symbol or file…" />
+        <SymbolPicker
+          repo={repo}
+          value={pick}
+          onChange={open}
+          multiple={false}
+          placeholder="Jump to a symbol or file…"
+        />
       </div>
+
       {!ref && !file ? (
         <Suggestions repo={repo} />
       ) : q.error ? (
-        <ErrorNote error={q.error} />
+        <ErrorNote error={q.error} onRetry={q.reload} />
       ) : !d ? (
-        <Spinner />
+        <Spinner label="Reading the graph" />
       ) : "candidates" in d ? (
         d.candidates.length ? (
           <Candidates repo={repo} items={d.candidates} />
         ) : (
-          <Empty title={`Nothing named “${splitId(ref)[1] || ref}”`} icon={<FileCode className="size-6" />} />
+          <Empty title={`Nothing named “${splitId(ref)[1] || ref}”`} icon={<FileCode className="size-6" aria-hidden />}>
+            The index may predate this symbol — re-index the repository if you added it recently.
+          </Empty>
         )
       ) : "symbol" in d ? (
         <SymbolView repo={repo} d={d} />

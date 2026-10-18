@@ -134,30 +134,6 @@
   --color-data-5: var(--p-magenta-400);
   --color-data-6: var(--p-lime-400);
 
-  /* ------------------------------------------------- legacy token aliases --
-   * The pre-existing pages address colours by these names. They are kept as a
-   * stable alias layer so the whole product re-skins from this file alone and
-   * nothing has to be rewritten to change the palette again.
-   * New code should prefer the tier-2 names above. */
-  --color-void: var(--p-ground);
-  --color-carbon: var(--p-base);
-  --color-obsidian: var(--p-surface-2);
-  --color-graphite: var(--p-line-1);
-  --color-smoke: var(--p-line-3);
-  --color-ash: var(--p-ink-faint);
-  --color-fog: var(--p-ink-low);
-  --color-mist: var(--p-ink-mid);
-  --color-bone: var(--p-ink-hi);
-  --color-paper: var(--p-ink-max);
-  --color-cream: var(--p-ink-mid);
-  --color-brand-soft: var(--p-violet-200);
-  --color-signal: var(--p-violet-300); /* links, citations, "live" */
-  --color-pulse-green: var(--p-lime-400);
-  --color-coral-red: var(--p-red-500);
-  --color-signal-teal: var(--p-teal-400);
-  --color-iris-violet: var(--p-violet-500);
-  --color-lavender: var(--p-violet-300);
-
   /* ------------------------------------------------------------- type scale
    * Three faces, each with one job (Apex Kinetix's trio):
    *   display  Barlow Condensed — headlines and the big metric readouts

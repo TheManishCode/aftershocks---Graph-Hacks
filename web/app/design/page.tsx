@@ -22,16 +22,23 @@ import {
   Callout,
   Chip,
   Code,
+  CodeBlock,
   Distribution,
   Divider,
+  Empty,
+  ErrorNote,
   Eyebrow,
   Grid,
   Kbd,
   Metric,
+  Mono,
   MetricRow,
   Delta,
   Meter,
+  Page,
+  PageHeader,
   Panel,
+  Range,
   RiskGauge,
   Segmented,
   SeverityChip,
@@ -40,12 +47,14 @@ import {
   SkeletonRows,
   Slab,
   Sparkline,
+  Spinner,
   Stack,
   Toolbar,
   ToolbarSep,
+  Trace,
+  TraceLine,
   type Severity,
 } from "@/components/ds";
-import { Page, PageHeader } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 
 const SURFACES = ["bg-ground", "bg-base", "bg-surface", "bg-surface-raised", "bg-surface-overlay"];
@@ -74,8 +83,14 @@ function Swatch({ className, name }: { className: string; name: string }) {
   );
 }
 
+const DIFF = `@@ -48,7 +48,7 @@ def resolve(self, name: str) -> Symbol | None:
+-        return self._index.get(name)
++        return self._index.get(name) or self._fallback(name)
+     def _fallback(self, name: str) -> Symbol | None:`;
+
 export default function DesignPage() {
   const [seg, setSeg] = useState("a");
+  const [depth, setDepth] = useState(3);
   return (
     <Page>
       <PageHeader
@@ -197,10 +212,40 @@ export default function DesignPage() {
               ]}
             />
             <ToolbarSep />
+            <Range value={depth} onChange={setDepth} label="Depth" format={(n) => `${n} hops`} />
+            <ToolbarSep />
             <Button size="sm" variant="outline">
               Run
             </Button>
           </Toolbar>
+        </Slab>
+
+        <Slab
+          title="Machine output"
+          description="Anything a tool or a model produced is framed, monospaced and copyable — never passed off as prose the product wrote."
+        >
+          <Grid cols={2}>
+            <Panel title="CodeBlock" flush>
+              <CodeBlock code={DIFF} diff title="resolver.py" maxHeight={200} />
+            </Panel>
+            <Panel title="Trace" note="One line per step of a streamed answer; a step with a body expands.">
+              <Trace>
+                <TraceLine status="done" title="Parsed the question" summary="2 symbols named" />
+                <TraceLine
+                  status="done"
+                  title="impact"
+                  summary="1,284 impacted"
+                  meta={<Mono className="text-micro text-ink-faint">41ms</Mono>}
+                >
+                  <p className="text-caption text-ink-muted">
+                    The expanded body holds the tool&apos;s arguments and its raw result.
+                  </p>
+                </TraceLine>
+                <TraceLine status="running" title="Writing the answer" />
+                <TraceLine status="pending" title="Collecting receipts" />
+              </Trace>
+            </Panel>
+          </Grid>
         </Slab>
 
         <Slab title="Data display" description="Numbers are instrument readouts: loud value, quiet label, tabular figures.">
@@ -265,6 +310,18 @@ export default function DesignPage() {
                 </Chip>
                 <Chip tone="info">info</Chip>
               </div>
+              <Divider className="my-4" label="Inline" />
+              <Spinner label="Traversing the graph" />
+            </Panel>
+          </Grid>
+          <Grid cols={2} className="mt-[var(--stack-gap)]">
+            <Panel title="Empty" flush>
+              <Empty title="Nothing to show yet" icon={<Info className="size-6" aria-hidden />}>
+                An empty state says what to do next, never just that there is nothing here.
+              </Empty>
+            </Panel>
+            <Panel title="Error">
+              <ErrorNote error="FalkorDB refused the connection on 127.0.0.1:6379." onRetry={() => {}} />
             </Panel>
           </Grid>
         </Slab>

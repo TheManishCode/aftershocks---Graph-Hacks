@@ -51,26 +51,26 @@ const Card = memo(function Card({ data }: NodeProps<Node<Data>>) {
   return (
     <div
       className={cn(
-        "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-lg border bg-obsidian/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
-        data.emphasis ? "border-brand/60 epi-glow" : "border-graphite hover:border-smoke",
-        data.selected && "border-brand ring-2 ring-brand/50 ring-offset-2 ring-offset-void",
+        "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-panel border bg-surface-overlay/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
+        data.emphasis ? "border-brand/60 shadow-[0_0_0_1px_var(--color-brand),0_0_24px_-6px_var(--color-brand)]" : "border-line hover:border-line-loud",
+        data.selected && "border-brand ring-2 ring-brand/50 ring-offset-2 ring-offset-ground",
       )}
       style={{ width: NODE_W, height: NODE_H }}
       title={data.id}
     >
-      <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-smoke" />
-      <span className={cn("absolute inset-y-0 left-0 w-1", data.tone ?? "bg-smoke")} aria-hidden />
+      <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-line-loud" />
+      <span className={cn("absolute inset-y-0 left-0 w-1", data.tone ?? "bg-line-loud")} aria-hidden />
       <div className="flex items-center gap-2">
-        <span className="truncate font-mono text-[12.5px] text-paper">{symName(data.label)}</span>
-        {data.badge && <span className="ml-auto shrink-0 font-mono text-[11px] text-fog">{data.badge}</span>}
+        <span className="truncate font-mono text-code text-ink-strong">{symName(data.label)}</span>
+        {data.badge && <span className="ml-auto shrink-0 font-mono text-micro text-ink-muted">{data.badge}</span>}
       </div>
-      {data.sub && <div className="mt-0.5 truncate font-mono text-[10.5px] text-fog">{data.sub}</div>}
+      {data.sub && <div className="mt-0.5 truncate font-mono text-micro text-ink-muted">{data.sub}</div>}
       {data.value !== undefined && (
-        <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-graphite">
-          <div className={cn("h-full", data.tone ?? "bg-mist")} style={{ width: `${Math.max(3, data.value * 100)}%` }} />
+        <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-line">
+          <div className={cn("h-full", data.tone ?? "bg-ink")} style={{ width: `${Math.max(3, data.value * 100)}%` }} />
         </div>
       )}
-      <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-smoke" />
+      <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-line-loud" />
     </div>
   );
 });
@@ -125,8 +125,8 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
   );
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-graphite bg-void" style={{ height }}>
-      {rfNodes.length === 0 && nodes.length > 0 && <div className="absolute inset-0 grid place-items-center text-sm text-fog">Laying out…</div>}
+    <div className="relative overflow-hidden rounded-panel border border-line bg-ground" style={{ height }}>
+      {rfNodes.length === 0 && nodes.length > 0 && <div className="absolute inset-0 grid place-items-center text-body-sm text-ink-muted">Laying out…</div>}
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -142,12 +142,12 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
         fitView
       >
         {touch && (
-          <Panel position="top-left" className="!m-2 rounded bg-carbon/90 px-2 py-1 text-[11px] text-fog">
+          <Panel position="top-left" className="!m-2 rounded bg-base/90 px-2 py-1 text-micro text-ink-muted">
             Pinch to zoom · tap a node
           </Panel>
         )}
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#26241f" />
-        <Controls showInteractive={false} className="!border-graphite !bg-carbon [&>button]:!border-graphite [&>button]:!bg-carbon [&>button]:!fill-fog" />
+        <Controls showInteractive={false} className="!border-line !bg-base [&>button]:!border-line [&>button]:!bg-base [&>button]:!fill-ink-muted" />
       </ReactFlow>
     </div>
   );

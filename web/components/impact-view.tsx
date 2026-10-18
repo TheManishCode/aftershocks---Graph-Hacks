@@ -29,6 +29,7 @@ import {
   Empty,
   Eyebrow,
   Grid,
+  Meter,
   Metric,
   Mono,
   Panel,
@@ -43,7 +44,7 @@ import {
 } from "@/components/ds";
 import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
 import { AlertTriangle, ChevronDown, ChevronRight, GitDiff, Play, TestTube, Users } from "@/components/icons";
-import { CopyButton, FileLink, Meter, Receipts, SymLink } from "@/components/kit";
+import { CopyButton, FileLink, Receipts, SymLink } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import type { Impact, Impacted, Problem, Tier } from "@/lib/api";
 import { HOW, num, pct, pytestNode, relTime, splitId, symName } from "@/lib/format";
