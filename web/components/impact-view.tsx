@@ -11,10 +11,11 @@
  *    from. A score with no breakdown is a number to argue with, not evidence.
  *
  * 2. **Colour means exactly one thing here.** The severity ramp carries
- *    likelihood — the risk level and the three tiers — and nothing else. Brand
- *    violet marks the symbols *you* said you were changing, and teal marks a
- *    test. The eye should be able to read the tier without reading the word,
- *    but the word is always there too.
+ *    likelihood — the risk level and the three tiers — and nothing else. The
+ *    seeds you said you were changing are marked by the achromatic chrome, not
+ *    by a hue of their own, so nothing on this page competes with the ramp. The
+ *    eye should be able to read the tier without reading the word, but the word
+ *    is always there too.
  *
  * 3. **Nothing is truncated silently.** Every list that caps says how many it
  *    is hiding, because a capped list that looks complete is worse than no list.
@@ -117,7 +118,7 @@ export function ProblemList({
   return (
     <div className="space-y-2">
       {problems.map((p) => (
-        <div key={p.ref} className="rounded-panel border border-warn/30 bg-warn/5 px-3 py-2.5 text-body-sm">
+        <div key={p.ref} className="rounded-nested border border-warn/30 bg-warn/5 px-3 py-2.5 text-body-sm">
           <div className="flex items-start gap-2 text-ink">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
             <span>
@@ -203,11 +204,11 @@ function ImpactGraph({
       <Selection repo={repo} data={data} id={selected} />
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-ink-muted">
         <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-[2px] bg-brand" aria-hidden /> changed
+          <span className="size-2 rounded-full bg-brand" aria-hidden /> changed
         </span>
         {TIERS.map((t) => (
           <span key={t} className="flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-[2px]", tierBg(t))} aria-hidden /> {t}
+            <span className={cn("size-2 rounded-full", tierBg(t))} aria-hidden /> {t}
           </span>
         ))}
         <span>
@@ -229,12 +230,12 @@ function ImpactRow({ repo, it, open, onToggle }: { repo: string; it: Impacted; o
   return (
     <li
       data-row={it.id}
-      className={cn("scroll-mt-20 rounded-panel border border-transparent", open && "border-brand/40 bg-surface-raised")}
+      className={cn("scroll-mt-20 rounded-nested border border-transparent", open && "border-brand/40 bg-surface-raised")}
     >
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 rounded-panel px-2 py-1.5 text-left hover:bg-accent"
+        className="flex w-full items-center gap-3 rounded-nested px-2 py-1.5 text-left hover:bg-accent"
         aria-expanded={open}
       >
         <Chevron className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
@@ -475,7 +476,7 @@ export function ImpactView({
               <>
                 <ul className="space-y-0.5">
                   {data.tests.slice(0, 30).map((t) => (
-                    <li key={t.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-caption">
+                    <li key={t.id} className="flex items-center gap-2 rounded-inner px-2 py-1 text-caption">
                       <TestTube className="size-3.5 shrink-0 text-info" aria-hidden />
                       <SymLink repo={repo} id={t.id} name={t.name} className="min-w-0 truncate text-caption" />
                       {t.runtime && (
@@ -511,7 +512,7 @@ export function ImpactView({
             {data.hidden_coupling.length ? (
               <ul className="space-y-1">
                 {data.hidden_coupling.slice(0, 10).map((h) => (
-                  <li key={h.path} className="rounded-[6px] px-2 py-1 text-caption">
+                  <li key={h.path} className="rounded-inner px-2 py-1 text-caption">
                     <div className="flex items-center gap-2">
                       <FileLink repo={repo} path={h.path} className="min-w-0 truncate text-caption" />
                       <Mono className="ml-auto text-micro text-warn">{pct(h.strength)}</Mono>
@@ -531,7 +532,7 @@ export function ImpactView({
             {data.import_only?.length ? (
               <ul className="space-y-1">
                 {data.import_only.slice(0, 10).map((r) => (
-                  <li key={`${r.file}->${r.imports}`} className="rounded-[6px] px-2 py-1 text-caption">
+                  <li key={`${r.file}->${r.imports}`} className="rounded-inner px-2 py-1 text-caption">
                     <FileLink
                       repo={repo}
                       path={r.file}
@@ -557,7 +558,7 @@ export function ImpactView({
             {data.owners.length ? (
               <ul className="space-y-1">
                 {data.owners.slice(0, 6).map((o) => (
-                  <li key={o.email} className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-caption">
+                  <li key={o.email} className="flex items-center gap-2 rounded-inner px-2 py-1 text-caption">
                     <Users className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
                     {/* The email is the disambiguator when two people share a name,
                         and it is already in the indexed git history. */}

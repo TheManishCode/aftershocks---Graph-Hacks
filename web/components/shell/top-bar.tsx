@@ -34,7 +34,11 @@ function Logo() {
       className="flex shrink-0 items-center gap-2 text-ink-strong transition-opacity hover:opacity-80"
       aria-label="Aftershock home"
     >
-      <span className="grid size-6 place-items-center rounded-control bg-brand-solid text-white shadow-[var(--shadow-accent-glow)]">
+      {/* The mark is the one inverted object in the global chrome: a small
+          #E5E5E5 tile carrying black ink. It is not a coloured logo, because a
+          coloured logo would be a second meaning for hue in a product where
+          hue means severity. */}
+      <span className="grid size-7 place-items-center rounded-inner bg-invert text-invert-ink">
         <Pulse className="size-4" aria-hidden />
       </span>
       <span className="hidden font-display text-[1.05rem] leading-none font-medium tracking-[0.01em] uppercase sm:inline">

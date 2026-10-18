@@ -68,7 +68,7 @@ function Step({ repo, s, i }: { repo: string; s: EdgeStep; i: number }) {
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-muted">
         <FileLink repo={repo} path={s.from.file} line={s.lines?.[0] ?? s.from.line} className="text-micro" />
-        {s.how && <Mono className="rounded-[5px] bg-accent px-1.5 py-0.5">{HOW[s.how] ?? s.how}</Mono>}
+        {s.how && <Mono className="rounded-full bg-accent px-1.5 py-0.5">{HOW[s.how] ?? s.how}</Mono>}
         {s.confidence !== undefined && (
           <span className="flex items-center gap-1.5">
             <Meter

@@ -73,7 +73,7 @@ export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
   const at = job.status === "done" ? STAGES.length : Math.max(0, STAGES.findIndex((x) => x.key === job.stage));
   const frac = job.stage === "parse" && job.total ? (job.done ?? 0) / job.total : 0;
   return (
-    <div className="as-in rounded-panel border border-line bg-surface-raised p-4" aria-live="polite">
+    <div className="as-in rounded-nested border border-line bg-surface-raised p-4" aria-live="polite">
       <div className="mb-3 flex items-center gap-2 text-sm">
         {job.status === "running" && <Loader2 className="size-4 animate-spin text-brand" aria-hidden />}
         {job.status === "done" && <Check className="size-4 text-pass" aria-hidden />}

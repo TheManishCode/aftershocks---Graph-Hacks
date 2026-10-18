@@ -15,7 +15,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
-/* Eyebrow — the mono label rail (Zenith-X / Apex). Names a region in one word. */
+/* Eyebrow — the label rail. `label-md` from the source: mono 12 / 600 / 1.2.   */
 /* -------------------------------------------------------------------------- */
 
 export function Eyebrow({
@@ -27,9 +27,12 @@ export function Eyebrow({
   return (
     <span
       className={cn(
-        "font-mono text-micro uppercase",
+        // 12px / 600 / 0.06em is `label-md`, the source's declared label style.
+        // It is the single most repeated element in the interface, so it is
+        // worth matching exactly rather than approximating with text-micro.
+        "font-mono text-label font-semibold uppercase",
         tone === "muted" && "text-ink-muted",
-        tone === "brand" && "text-brand",
+        tone === "brand" && "text-ink-strong",
         tone === "strong" && "text-ink-strong",
         className,
       )}
@@ -45,12 +48,13 @@ export function Eyebrow({
 /* -------------------------------------------------------------------------- */
 
 const chip = cva(
-  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro whitespace-nowrap uppercase",
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-label font-semibold whitespace-nowrap uppercase",
   {
     variants: {
       tone: {
         neutral: "border-line-strong bg-surface text-ink-muted",
-        brand: "border-brand/35 bg-brand/10 text-brand",
+        /* Chrome is achromatic: the emphatic chip is an inverted pill, not a hue. */
+        brand: "border-transparent bg-invert text-invert-ink",
         pass: "border-pass/35 bg-pass/10 text-pass",
         warn: "border-warn/35 bg-warn/10 text-warn",
         fail: "border-fail/35 bg-fail/10 text-fail",
@@ -58,7 +62,7 @@ const chip = cva(
         /** For the severity ramp, prefer <SeverityChip>, which picks the tone. */
         bare: "border-transparent bg-transparent px-0 text-ink-muted",
       },
-      size: { sm: "text-[10px] leading-4", md: "text-micro" },
+      size: { sm: "text-micro px-2", md: "text-label" },
     },
     defaultVariants: { tone: "neutral", size: "md" },
   },
@@ -94,7 +98,7 @@ export function Mono({ className, children, ...rest }: React.ComponentProps<"spa
 export function Code({ className, children, ...rest }: React.ComponentProps<"code">) {
   return (
     <code
-      className={cn("rounded-sm border border-line bg-surface px-1 py-px font-mono text-[0.92em] text-ink-strong", className)}
+      className={cn("rounded-inner border border-line bg-surface px-1.5 py-px font-mono text-[0.92em] text-ink-strong", className)}
       {...rest}
     >
       {children}
@@ -106,7 +110,7 @@ export function Kbd({ className, children, ...rest }: React.ComponentProps<"kbd"
   return (
     <kbd
       className={cn(
-        "inline-flex h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-sm border border-line bg-surface-raised px-1 font-mono text-[10px] text-ink-muted",
+        "inline-flex h-[1.3rem] min-w-[1.3rem] items-center justify-center rounded-inner border border-line bg-surface-raised px-1.5 font-mono text-[10px] text-ink-muted",
         className,
       )}
       {...rest}
@@ -236,9 +240,12 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
             onClick={() => onChange(o.value)}
             data-hit
             className={cn(
-              "rounded-[6px] font-mono text-micro whitespace-nowrap uppercase transition-colors duration-[var(--dur-fast)]",
+              "rounded-inner font-mono text-micro whitespace-nowrap uppercase transition-colors duration-[var(--dur-fast)]",
               size === "sm" ? "px-2 py-1" : "px-2.5 py-1.5",
-              active ? "bg-brand-solid text-white" : "text-ink-muted hover:bg-accent hover:text-ink-strong",
+              // The selected segment is the inverted surface in miniature.
+              // `text-white` on a #E5E5E5 fill was a 1.1:1 hold-over from the
+              // retired palette — unreadable the moment the fill went light.
+              active ? "bg-invert text-invert-ink" : "text-ink-muted hover:bg-accent hover:text-ink-strong",
             )}
           >
             {o.label}
@@ -254,7 +261,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
 /* -------------------------------------------------------------------------- */
 
 export function Skeleton({ className, ...rest }: React.ComponentProps<"div">) {
-  return <div className={cn("relative overflow-hidden rounded-[6px] bg-surface-raised as-sweep", className)} aria-hidden {...rest} />;
+  return <div className={cn("relative overflow-hidden rounded-inner bg-surface-raised as-sweep", className)} aria-hidden {...rest} />;
 }
 
 /** A skeleton shaped like n table rows, so loading does not reflow the layout. */
@@ -272,7 +279,7 @@ export function SkeletonRows({ rows = 6, className }: { rows?: number; className
 /* Callout — an inline note. The only way to render an advisory block.          */
 /* -------------------------------------------------------------------------- */
 
-const callout = cva("flex items-start gap-2.5 rounded-panel border px-3 py-2.5 text-body-sm", {
+const callout = cva("flex items-start gap-2.5 rounded-nested border px-3 py-2.5 text-body-sm", {
   variants: {
     tone: {
       neutral: "border-line bg-surface text-ink",

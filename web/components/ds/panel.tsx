@@ -4,15 +4,24 @@
  * There are exactly three container shapes in the product, and this file owns
  * all of them. A new page composes these; it never invents a box.
  *
- *   <Panel>   data. 10px radius, hairline border, a labelled header rail.
+ *   <Panel>   data. 24px radius, #27272A hairline, a labelled mono header rail.
  *             The default. Dense, nestable, scroll-safe.
- *   <Bento>   feature / navigation card. 18px radius, hover lift, for the small
- *             number of places that are "choose where to go", not "read this".
- *   <Slab>    a full-bleed band used to group panels into a titled section.
+ *   <Bento>   a navigation card. Same radius and border language as Panel — the
+ *             guardrails require one radius across buttons, cards and badges —
+ *             but it lifts on hover, because it is "choose where to go" rather
+ *             than "read this". Lift is the only thing that distinguishes them,
+ *             and that is deliberate: the difference is behavioural, not visual.
+ *   <Slab>    a titled band that groups panels and sets the 80px section rhythm.
  *
- * Depth is material, not shadow: a nested panel steps one rung up the surface
- * ladder (`tone="raised"`) and gains a 1px top highlight. This is the
- * Skeuomorphic Interface rule, and it keeps nested data legible on OLED.
+ * DEPTH IS MATERIAL, NOT SHADOW. On a pure-black ground a drop shadow has
+ * nothing to fall on; it just greys the area around the box. A nested panel
+ * steps one rung up the surface ladder (`tone="raised"`) and keeps its
+ * hairline. The single exception is `tone="focal"`, the inverted #E5E5E5
+ * surface, which is lifted off the page precisely because it is meant to be
+ * the one object the eye lands on first.
+ *
+ * ONE FOCAL PANEL PER VIEWPORT. Two inverted surfaces competing is the fastest
+ * way to destroy the "first viewport signal" the brief asks to preserve.
  */
 
 import { cva, type VariantProps } from "class-variance-authority";
@@ -25,17 +34,28 @@ import { Eyebrow } from "./primitives";
 /* Panel                                                                       */
 /* -------------------------------------------------------------------------- */
 
-const panel = cva("flex min-w-0 flex-col rounded-panel border", {
+const panel = cva("flex min-w-0 flex-col rounded-card border", {
   variants: {
     tone: {
       /** On the page ground. The default. */
       default: "border-line bg-base",
-      /** Inside another panel — one rung up the ladder, lit from above. */
-      raised: "border-line-strong bg-surface-raised shadow-[var(--shadow-inset-top)]",
-      /** For inputs and read-only output wells. */
-      recessed: "border-line bg-ground/60",
-      /** Draws attention without using a severity colour. */
-      brand: "border-brand/30 bg-brand/[0.045]",
+      /** Inside another panel — one rung up the ladder. */
+      raised: "border-line-strong bg-surface-raised",
+      /** For inputs and read-only output wells: recessed into the black. */
+      recessed: "border-line bg-ground",
+      /**
+       * The inverted focal surface. Carries black ink, so every child inheriting
+       * `currentColor` flips with it; use `text-invert-ink-muted` for metadata
+       * inside one rather than `text-ink-muted`, which is tuned for black.
+       */
+      focal: "border-transparent bg-invert text-invert-ink shadow-[var(--shadow-focal)]",
+      /**
+       * Attention without a hue: a louder border on a lifted surface. This is
+       * what `tone="brand"` used to be, renamed because the chrome is no longer
+       * a colour and a token called "brand" would now be lying about what it
+       * draws. Use it where something matters but has no severity.
+       */
+      emphasis: "border-line-loud bg-surface-raised",
       /** No chrome — for grouping only. */
       bare: "border-transparent bg-transparent",
     },
@@ -56,12 +76,24 @@ export interface PanelProps extends Omit<React.ComponentProps<"section">, "title
   bodyClassName?: string;
 }
 
-export function Panel({ title, action, note, flush, children, className, bodyClassName, tone, interactive, ...rest }: PanelProps) {
+export function Panel({
+  title,
+  action,
+  note,
+  flush,
+  children,
+  className,
+  bodyClassName,
+  tone,
+  interactive,
+  ...rest
+}: PanelProps) {
   // A <section> is only a landmark once it has an accessible name; an unnamed one
   // is noise in a screen reader's region list. Titled panels name themselves from
   // their own header, so "Run", "Test libraries" and "Recent runs" become real
   // navigable regions instead of three anonymous boxes.
   const titleId = React.useId();
+  const focal = tone === "focal";
   return (
     <section
       className={cn(panel({ tone, interactive }), className)}
@@ -69,25 +101,43 @@ export function Panel({ title, action, note, flush, children, className, bodyCla
       {...rest}
     >
       {(title || action) && (
-        <header className="flex min-h-[var(--panel-head-h)] flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-[var(--panel-pad-x)] py-1.5">
+        <header
+          className={cn(
+            "flex min-h-[var(--panel-head-h)] flex-wrap items-center gap-x-4 gap-y-1 border-b px-[var(--panel-pad-x)] py-2.5",
+            focal ? "border-invert-ink/12" : "border-line",
+          )}
+        >
           <div className="min-w-0">
             {title && (
-              <Eyebrow id={titleId} className="block truncate">
+              <Eyebrow id={titleId} className={cn("block truncate", focal && "text-invert-ink/70")}>
                 {title}
               </Eyebrow>
             )}
-            {note && <span className="mt-0.5 block truncate text-caption text-ink-muted normal-case">{note}</span>}
+            {note && (
+              <span
+                className={cn(
+                  "mt-1 block truncate text-caption normal-case",
+                  focal ? "text-invert-ink-muted" : "text-ink-muted",
+                )}
+              >
+                {note}
+              </span>
+            )}
           </div>
-          {action && <div className="ml-auto flex shrink-0 items-center gap-1.5">{action}</div>}
+          {action && <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>}
         </header>
       )}
-      {flush ? children : <div className={cn("min-h-0 flex-1 p-[var(--panel-pad-x)]", bodyClassName)}>{children}</div>}
+      {flush ? (
+        children
+      ) : (
+        <div className={cn("min-h-0 flex-1 p-[var(--panel-pad-x)]", bodyClassName)}>{children}</div>
+      )}
     </section>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Bento — the navigational / feature card (Cognitive Processing Hub).         */
+/* Bento — the navigational card.                                              */
 /* -------------------------------------------------------------------------- */
 
 export function Bento({
@@ -99,19 +149,19 @@ export function Bento({
   return (
     <As
       className={cn(
-        "group relative isolate flex flex-col overflow-hidden rounded-bento border border-line bg-base p-5",
-        "transition-[border-color,background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out-quint)]",
-        "hover:-translate-y-0.5 hover:border-brand/40 hover:bg-surface",
-        "focus-visible:-translate-y-0.5 focus-visible:border-brand/40",
+        "group as-lift relative isolate flex flex-col overflow-hidden rounded-card border border-line bg-base",
+        "p-[var(--space-card)] hover:border-line-loud hover:bg-surface",
+        "focus-visible:-translate-y-[3px] focus-visible:border-line-loud",
         className,
       )}
       {...rest}
     >
-      {/* A soft brand wash that arrives on hover — the Cognitive Hub's ambient layer. */}
+      {/* A light wash arriving from the top-left on hover. Achromatic, because
+          colour in this product means severity and a nav card has no severity. */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-[var(--dur-slow)] group-hover:opacity-100"
-        style={{ background: "radial-gradient(120% 100% at 0% 0%, rgb(124 92 255 / 12%), transparent 60%)" }}
+        style={{ background: "radial-gradient(130% 110% at 0% 0%, rgb(255 255 255 / 9%), transparent 62%)" }}
       />
       {children}
     </As>
@@ -137,10 +187,10 @@ export function Slab({
   return (
     <section className={cn("min-w-0", className)} {...rest}>
       {(title || action) && (
-        <div className="mb-3 flex flex-wrap items-end gap-x-4 gap-y-1">
+        <div className="mb-[var(--space-card)] flex flex-wrap items-end gap-x-6 gap-y-2">
           <div className="min-w-0">
-            {title && <h2 className="text-subheading leading-none">{title}</h2>}
-            {description && <p className="mt-1.5 max-w-prose text-body-sm text-ink-muted">{description}</p>}
+            {title && <h2 className="font-display text-subheading leading-none">{title}</h2>}
+            {description && <p className="mt-2.5 max-w-[68ch] text-body-sm text-ink-muted">{description}</p>}
           </div>
           {action && <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>}
         </div>
@@ -157,7 +207,10 @@ export function Slab({
 export function Toolbar({ className, children, ...rest }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex flex-wrap items-center gap-2 rounded-panel border border-line bg-base px-3 py-2", className)}
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-card border border-line bg-base px-4 py-2.5",
+        className,
+      )}
       role="toolbar"
       {...rest}
     >
@@ -168,7 +221,7 @@ export function Toolbar({ className, children, ...rest }: React.ComponentProps<"
 
 /** A vertical hairline between toolbar groups. */
 export function ToolbarSep({ className }: { className?: string }) {
-  return <span className={cn("mx-0.5 h-5 w-px shrink-0 bg-line", className)} aria-hidden />;
+  return <span className={cn("mx-1 h-5 w-px shrink-0 bg-line", className)} aria-hidden />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -185,6 +238,8 @@ const GRID_COLS: Record<string, string> = {
   /** The asymmetric work/context split used by Impact, Path and Culprit. */
   "main-aside": "grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]",
   "aside-main": "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]",
+  /** The dashboard split the source uses: a wide focal object beside a rail. */
+  "matrix-rail": "grid-cols-1 xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)]",
 };
 
 export function Grid({

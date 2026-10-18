@@ -439,6 +439,13 @@ async def heal_stream(repo: str, run_id: str, body: HealBody, request: Request):
     Leaving the page does not stop it: an edit is always either kept after a re-run or reverted."""
     from .runtime import jobs
 
+    # The run gate comes before the run-id shape check, so that a caller who is
+    # not allowed to run anything gets the same 403 here as on `run/stream`
+    # rather than a 400 that tells them their id was malformed. Validating
+    # input ahead of authorisation is how a gate starts answering questions
+    # for people who have not passed it.
+    if why := run_refusal(request):
+        raise HTTPException(403, why)
     if not T.RUN_ID.match(run_id):
         raise HTTPException(400, "invalid run id")
     return _job_stream(repo, request, "heal", lambda emit, cancel: jobs.heal_run(

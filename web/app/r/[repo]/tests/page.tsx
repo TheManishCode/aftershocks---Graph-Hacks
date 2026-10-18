@@ -129,7 +129,7 @@ function RunGate({ repo, reason }: { repo: string; reason: string | null }) {
   const serve = "AFTERSHOCK_ALLOW_RUN=1 aftershock serve";
   const cli = `aftershock run ${repo} --diff`;
   return (
-    <Panel tone="brand" title="Running is off" className="mb-[var(--stack-gap)]">
+    <Panel tone="emphasis" title="Running is off" className="mb-[var(--stack-gap)]">
       <div className="flex items-start gap-2.5">
         <Prohibit className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         <p className="min-w-0 text-body-sm text-ink">
@@ -201,7 +201,7 @@ function Libraries({ repo }: { repo: string }) {
       bodyClassName="flex flex-col gap-2.5"
     >
       {adding && (
-        <form onSubmit={submit} className="grid gap-2 rounded-panel border border-line-strong bg-surface-raised p-2.5">
+        <form onSubmit={submit} className="grid gap-2 rounded-nested border border-line-strong bg-surface-raised p-2.5">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)]">
             <div>
               <Label htmlFor="lib-name" className="mb-1 block">

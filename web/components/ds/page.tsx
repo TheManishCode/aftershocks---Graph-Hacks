@@ -37,9 +37,14 @@ export function PageHeader({ title, sub, eyebrow, children, className, ...rest }
   return (
     <div className={cn("mb-[var(--section-gap)] flex flex-wrap items-end gap-x-6 gap-y-3", className)} {...rest}>
       <div className="min-w-0">
-        {eyebrow && <Eyebrow className="mb-1.5 block">{eyebrow}</Eyebrow>}
-        <h1 className="text-display leading-none">{title}</h1>
-        {sub && <p className="mt-2 max-w-2xl text-body-sm text-ink-muted">{sub}</p>}
+        {eyebrow && <Eyebrow className="mb-2 block">{eyebrow}</Eyebrow>}
+        {/* `text-heading`, not `text-display`. The 64px display step is the
+            hero's and only the hero's — if every tool page opens at the same
+            size as the landing page, the size stops meaning anything. Inter
+            here because a page title is one of the few strings in the product
+            a person wrote rather than a parser emitted. */}
+        <h1 className="font-display text-heading">{title}</h1>
+        {sub && <p className="mt-2.5 max-w-[68ch] text-body-sm text-ink-muted">{sub}</p>}
       </div>
       {children && <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>}
     </div>
@@ -64,7 +69,7 @@ export function Empty({
 }) {
   return (
     <div
-      className={cn("grid place-items-center rounded-panel border border-dashed border-line-strong px-6 py-12 text-center", className)}
+      className={cn("grid place-items-center rounded-nested border border-dashed border-line-strong px-6 py-12 text-center", className)}
       {...rest}
     >
       {icon && <div className="mb-3 text-ink-faint [&>svg]:size-6">{icon}</div>}

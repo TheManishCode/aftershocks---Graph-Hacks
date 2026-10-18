@@ -6,39 +6,47 @@
 @custom-variant dark (&:is(.dark *));
 
 /* =============================================================================
- * AFTERSHOCK DESIGN SYSTEM — "Seismic Instrument"
+ * AFTERSHOCK — "AETHER NODE" DESIGN SYSTEM
  * =============================================================================
+ * Built from `aether-node-dashboard-DESIGN.md`. The source declares:
  *
- * Synthesised from the DESIGN.md reference set (../../design.md/):
+ *   background #000000 · surface #E5E5E5 · text #FFFFFF / #A1A1AA · border #27272A
+ *   Inter 64/500/1.04 display · JetBrains Mono 16/400/1.6 body · Mono 12/600 labels
+ *   spacing 8 / 16 / 24 / 80 · radii card 24 · control 20 · pill
  *
- *   Apex Kinetix          → the ground. Green-black #0B0E0C, warm hairline #243029,
- *                           thermal orange, lime accent, Barlow Condensed display +
- *                           JetBrains Mono metadata. Operational density, modular panels.
- *   Skeuomorphic Iface    → nested surfaces. A raised panel is a *lighter* surface with an
- *                           inset top highlight, not a drop shadow. Amber for "attention".
- *   Cognitive Proc. Hub   → the action accent (indigo/violet), bento rhythm, generous
- *                           radii reserved for feature cards (never for data panels).
- *   Zenith-X Core Systems → mono label rails, ticker strips, numbered index gutters.
- *   Zenith Quiet Expanse  → restraint. Section rhythm, editorial serif for the landing only.
- *   NexusCore / Platform  → conversion surfaces and the violet CTA family.
+ * ---------------------------------------------------------------------------
+ * READING THE PALETTE CORRECTLY
+ * ---------------------------------------------------------------------------
+ * `surface: #E5E5E5` with `text-primary: #FFFFFF` cannot both describe the same
+ * box — white on #E5E5E5 is 1.1:1. In the source they are two different roles:
+ * #E5E5E5 is the *inverted focal surface* (the one featured panel, the primary
+ * button), and the field of ordinary panels is near-black separated by #27272A
+ * hairlines. That is modelled here literally: `--color-invert` is the focal
+ * surface and always carries black ink; `ground → base → surface → raised →
+ * overlay` is the ordinary near-black ladder. Flattening the two is what turns
+ * this language into the generic card grid the guardrails forbid.
+ *
+ * ---------------------------------------------------------------------------
+ * THE COLOUR CONTRACT (carried over, and stronger here)
+ * ---------------------------------------------------------------------------
+ *   CHROME is achromatic. Primary action, active nav, links, focus, selection
+ *   are white / #E5E5E5 / black — never a hue.
+ *   SEVERITY is the only hue in the product: lime → amber → orange → red for
+ *   risk, likelihood and impact tiers.
+ *
+ * The previous system spent violet on chrome and had to keep the accent cool to
+ * protect the thermal ramp. An achromatic chrome removes the conflict entirely:
+ * in a blast-radius tool, if something on screen is coloured, it is the answer.
  *
  * ---------------------------------------------------------------------------
  * ARCHITECTURE — three tiers. Components may ONLY use tier 2 and tier 3.
  * ---------------------------------------------------------------------------
  *   Tier 1  --p-*            raw palette. Never referenced outside this file.
- *   Tier 2  semantic tokens  surface / ink / line / accent / sev / data.
+ *   Tier 2  semantic tokens  surface / ink / line / sev / data.
  *   Tier 3  component tokens shadcn's --primary, --card … mapped onto tier 2.
  *
- * Re-skinning the entire product = editing tier 1 + the tier-2 block. No component
- * file contains a hex value. A second theme is a sibling block of tier-2 overrides.
- *
- * ---------------------------------------------------------------------------
- * COLOUR CONTRACT — the one rule that keeps this readable as the product grows
- * ---------------------------------------------------------------------------
- *   ACCENT (violet) is *chrome*: primary action, active nav, links, focus, selection.
- *   SEVERITY (lime → amber → orange → red) is *data*: risk, tiers, pass/fail, heat.
- * They never swap. This is why the accent is not warm: in a blast-radius tool the
- * thermal ramp belongs to the answer, so the chrome must stay out of that range.
+ * Re-skinning the product is an edit to tier 1 plus the tier-2 block. No
+ * component file contains a hex value.
  *
  * ---------------------------------------------------------------------------
  * RUNTIME SWITCHES (set on <html>, read by CSS only — no JS re-render needed)
@@ -50,167 +58,194 @@
 
 @theme {
   /* ---------------------------------------------------------------- tier 1 */
-  /* ground & surfaces — Apex Kinetix green-black, Skeuomorphic nesting ladder */
-  --p-ground: #070a08;
-  --p-base: #0b0e0c;
-  --p-surface-1: #111613;
-  --p-surface-2: #171f1a;
-  --p-surface-3: #1e2822;
-  --p-line-1: #243029; /* Apex border token */
-  --p-line-2: #2e3c34;
-  --p-line-3: #3c4d43;
+  /* The near-black ladder. Pure #000 is the page; panels lift off it in steps
+     small enough that the #27272A hairline stays the primary separator. */
+  --p-black: #000000;
+  --p-zinc-990: #09090b;
+  --p-zinc-975: #0e0e11;
+  --p-zinc-950: #131316;
+  --p-zinc-900: #18181b;
+  --p-zinc-850: #1f1f23;
+  --p-zinc-800: #27272a; /* the declared border token */
+  --p-zinc-700: #3f3f46;
+  --p-zinc-600: #52525b;
+  --p-zinc-500: #71717a;
+  --p-zinc-400: #a1a1aa; /* the declared text-secondary */
+  --p-zinc-300: #d4d4d8;
+  --p-zinc-200: #e5e5e5; /* the declared surface — inverted/focal only */
+  --p-white: #ffffff;
 
-  /* ink ladder */
-  --p-ink-max: #f4f8f5;
-  --p-ink-hi: #e2e9e4;
-  --p-ink-mid: #c6d1ca;
-  --p-ink-low: #93a199; /* 6.6:1 on ground — the floor for real text */
-  --p-ink-dim: #637068; /* decorative / disabled only */
-  --p-ink-faint: #45514b;
+  /* Severity — the only hue in the system. Tuned for ≥4.5:1 on pure black. */
+  --p-lime-400: #a3e635;
+  --p-lime-500: #84cc16;
+  --p-amber-400: #fbbf24;
+  --p-amber-500: #f59e0b;
+  --p-orange-400: #fb923c;
+  --p-orange-500: #f97316;
+  --p-red-400: #f87171;
+  --p-red-500: #ef4444;
 
-  /* accent family — chrome (Cognitive Hub indigo × Platform Overview violet) */
-  --p-violet-200: #c5baff;
-  --p-violet-300: #a796ff;
-  --p-violet-400: #9b87ff; /* text-safe on ground: 5.9:1 */
-  --p-violet-500: #7c5cff; /* fills */
-  --p-violet-600: #6341e8;
-  --p-violet-700: #4c2fc4;
-
-  /* thermal severity — Apex lime → Skeuomorphic amber → Apex orange → red */
-  --p-lime-400: #8be06e;
-  --p-lime-500: #6bc94e;
-  --p-amber-400: #e8b339;
-  --p-amber-500: #d4991f;
-  --p-orange-400: #ff7a43;
-  --p-orange-500: #ff5a1f; /* Apex primary, here: "high" */
-  --p-red-400: #ff6b6b;
-  --p-red-500: #ff4747;
-
-  /* data hues — categorical, for charts and graph groups */
-  --p-teal-400: #22c9db;
-  --p-sky-400: #52b6ff;
-  --p-indigo-400: #8b9eff;
-  --p-magenta-400: #e879c7;
+  /* Categorical data hues — identity, never magnitude. Used only by charts and
+     graph groupings, which need to be told apart rather than ranked. */
+  --p-cyan-400: #22d3ee;
+  --p-sky-400: #38bdf8;
+  --p-indigo-400: #818cf8;
+  --p-fuchsia-400: #e879f9;
 
   /* ---------------------------------------------------------------- tier 2 */
-  /* Surfaces: a strict ladder. Depth = one step up the ladder + a hairline.
-     Never a drop shadow (Apex/Skeuomorphic both build depth from material). */
-  --color-ground: var(--p-ground);
-  --color-base: var(--p-base);
-  --color-surface: var(--p-surface-1);
-  --color-surface-raised: var(--p-surface-2);
-  --color-surface-overlay: var(--p-surface-3);
+  /* Surfaces. Depth is one rung up the ladder plus a hairline — never a drop
+     shadow. On a pure-black ground a shadow has nothing to fall on. */
+  --color-ground: var(--p-black);
+  --color-base: var(--p-zinc-990);
+  --color-surface: var(--p-zinc-975);
+  --color-surface-raised: var(--p-zinc-900);
+  --color-surface-overlay: var(--p-zinc-850);
 
-  --color-line: var(--p-line-1);
-  --color-line-strong: var(--p-line-2);
-  --color-line-loud: var(--p-line-3);
+  /* The inverted focal surface: #E5E5E5 carrying black ink. One per viewport —
+     it is how the eye finds the single most important object on the screen. */
+  --color-invert: var(--p-zinc-200);
+  --color-invert-strong: var(--p-white);
+  --color-invert-ink: var(--p-black);
+  --color-invert-ink-muted: #52525b;
 
-  --color-ink: var(--p-ink-mid); /* body */
-  --color-ink-strong: var(--p-ink-max); /* headings */
-  --color-ink-muted: var(--p-ink-low); /* labels, metadata */
-  --color-ink-faint: var(--p-ink-faint); /* decorative */
+  --color-line: var(--p-zinc-800);
+  --color-line-strong: var(--p-zinc-700);
+  --color-line-loud: var(--p-zinc-600);
 
-  --color-brand: var(--p-violet-400); /* brand text + icons */
-  --color-brand-solid: var(--p-violet-500); /* brand fills */
-  --color-brand-hover: var(--p-violet-300);
-  --color-brand-ink: #ffffff; /* text on a brand fill */
+  --color-ink-strong: var(--p-white); /* headings, primary values */
+  --color-ink: var(--p-zinc-300); /* body */
+  --color-ink-muted: var(--p-zinc-400); /* labels, metadata — 7.4:1 on black */
+  --color-ink-faint: var(--p-zinc-500); /* decorative / disabled only */
 
-  /* severity — the data ramp. `sev-*` is the only correct source for risk colour. */
-  --color-sev-none: var(--p-ink-low);
+  /* Chrome is achromatic. `brand` is kept as the token name so every component
+     that already asks for "the interactive colour" keeps working. */
+  --color-brand: var(--p-white);
+  --color-brand-solid: var(--p-zinc-200);
+  --color-brand-hover: var(--p-white);
+  --color-brand-ink: var(--p-black); /* text on a brand fill */
+
+  /* Severity — the data ramp. The only correct source for risk colour. */
+  --color-sev-none: var(--p-zinc-400);
   --color-sev-low: var(--p-lime-400);
   --color-sev-medium: var(--p-amber-400);
   --color-sev-high: var(--p-orange-500);
   --color-sev-critical: var(--p-red-500);
 
+  /* Status is observed fact, not risk estimate, so it is kept off the ramp's
+     top end: a failing test is `fail`, never `sev-critical`. */
   --color-pass: var(--p-lime-400);
-  --color-fail: var(--p-red-500);
+  --color-fail: var(--p-red-400);
   --color-warn: var(--p-amber-400);
-  --color-info: var(--p-teal-400);
+  --color-info: var(--p-cyan-400);
 
-  --color-data-1: var(--p-violet-400);
-  --color-data-2: var(--p-teal-400);
+  --color-data-1: var(--p-zinc-200);
+  --color-data-2: var(--p-cyan-400);
   --color-data-3: var(--p-amber-400);
   --color-data-4: var(--p-sky-400);
-  --color-data-5: var(--p-magenta-400);
+  --color-data-5: var(--p-fuchsia-400);
   --color-data-6: var(--p-lime-400);
 
   /* ------------------------------------------------------------- type scale
-   * Three faces, each with one job (Apex Kinetix's trio):
-   *   display  Barlow Condensed — headlines and the big metric readouts
-   *   sans     Inter            — everything you read as prose or UI
-   *   mono     JetBrains Mono   — code, ids, paths, numbers, technical labels
-   * Steps are a 1.25 ratio from 13px, clamped so nothing needs media queries. */
-  --text-micro: 11px;
-  --text-micro--line-height: 1.18;
-  --text-micro--letter-spacing: 0.08em;
+   * Two faces, inverted from the usual split:
+   *   display  Inter          — display moments only (hero, section titles,
+   *                             large metric readouts). 500 weight, 1.04, 0 tracking.
+   *   mono     JetBrains Mono — body copy, labels, code, ids, paths, numbers.
+   *
+   * The source specifies mono body copy, and for this product that is not a
+   * stylistic tic: almost every string Aftershock renders is a path, a symbol
+   * or a number. Prose is the exception here, so prose adopts the machine face
+   * rather than the other way round.
+   *
+   * Sizes anchor on the three declared steps (64 / 16 / 12) and fill in between. */
+  --text-micro: 10px;
+  --text-micro--line-height: 1.2;
+  --text-micro--letter-spacing: 0.1em;
+  /* label-md, verbatim from the source */
+  --text-label: 12px;
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.06em;
   --text-caption: 12px;
-  --text-caption--line-height: 1.25;
-  --text-caption--letter-spacing: 0.01em;
-  --text-body-sm: 13px;
-  --text-body-sm--line-height: 1.55;
-  --text-body-sm--letter-spacing: -0.006em;
-  /* Code sits between caption and body-sm: JetBrains Mono runs large for its
-   * point size, so 12.5px next to 13px prose reads as the same size. No
-   * negative tracking — monospace is already spaced for scanning. */
+  --text-caption--line-height: 1.45;
+  --text-caption--letter-spacing: 0;
   --text-code: 12.5px;
-  --text-code--line-height: 1.5;
+  --text-code--line-height: 1.55;
   --text-code--letter-spacing: 0;
-  --text-body: 15px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 1.6;
+  --text-body-sm--letter-spacing: 0;
+  /* body-md, verbatim from the source */
+  --text-body: 16px;
   --text-body--line-height: 1.6;
-  --text-body--letter-spacing: -0.011em;
+  --text-body--letter-spacing: 0;
   --text-body-lg: 18px;
-  --text-body-lg--line-height: 1.5;
-  --text-body-lg--letter-spacing: -0.012em;
+  --text-body-lg--line-height: 1.55;
+  --text-body-lg--letter-spacing: 0;
   --text-subheading: 22px;
-  --text-subheading--line-height: 1.3;
-  --text-subheading--letter-spacing: -0.014em;
-  --text-heading: 30px;
+  --text-subheading--line-height: 1.25;
+  --text-subheading--letter-spacing: -0.01em;
+  --text-heading: clamp(28px, 3vw, 36px);
   --text-heading--line-height: 1.1;
-  --text-heading--letter-spacing: -0.02em;
-  --text-display: clamp(34px, 4.2vw, 52px);
+  --text-heading--letter-spacing: -0.015em;
+  /* display-lg, verbatim at the top of its clamp */
+  --text-display: clamp(38px, 5.4vw, 64px);
   --text-display--line-height: 1.04;
-  --text-display--letter-spacing: -0.01em;
-  --text-display-xl: clamp(48px, 8vw, 96px);
-  --text-display-xl--line-height: 0.96;
+  --text-display--letter-spacing: 0;
+  --text-display-xl: clamp(52px, 9vw, 112px);
+  --text-display-xl--line-height: 0.98;
   --text-display-xl--letter-spacing: -0.02em;
 
-  /* Weights stop at 600. Emphasis comes from colour and size, not from mass. */
+  /* Weights stop at 600. Emphasis comes from colour, scale and inversion. */
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 600;
 
   /* ------------------------------------------------------------------ radii
-   * Four, each bound to a role, so a glance tells you what a box is:
-   *   control  8px  buttons, inputs, chips      (Apex control token)
-   *   panel   10px  data panels, tables, lists
-   *   bento   18px  feature / marketing cards   (Cognitive Hub's generous radius)
-   *   pill          switches, tags, meters */
-  --radius-control: 8px;
-  --radius-panel: 10px;
-  --radius-bento: 18px;
+   * The source declares three, and the guardrails require buttons, cards and
+   * badges to share one language. So there are exactly three — no 4px corner
+   * anywhere, including inside vendored components.
+   *   card    24px  panels, cards, dialogs, popovers
+   *   control 20px  buttons, inputs, selects, chips
+   *   pill          switches, meters, tags, dots */
+  --radius-card: 24px;
+  --radius-control: 20px;
+  /* Nested boxes get the inner-radius of their parent so corners stay concentric
+     (24 − 8 padding = 16). Using the card radius again inside a card is the
+     single most common way this language is made to look wrong. */
+  --radius-nested: 16px;
+  --radius-inner: 12px;
+
+  /* ------------------------------------------------------ spacing & rhythm
+   * The four declared steps, exposed so layout never invents a fifth. */
+  --space-base: 8px;
+  --space-gap: 16px;
+  --space-card: 24px;
+  --space-section: 80px;
 
   /* ------------------------------------------------- elevation & materials */
-  --shadow-inset-top: inset 0 1px 0 0 rgb(255 255 255 / 5%);
-  --shadow-hairline: 0 0 0 1px var(--p-line-1);
-  --shadow-raised: inset 0 1px 0 0 rgb(255 255 255 / 6%), 0 1px 2px 0 rgb(0 0 0 / 40%);
-  --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 75%), 0 0 0 1px var(--p-line-2);
-  --shadow-accent-glow: 0 0 0 3px rgb(124 92 255 / 18%);
+  --shadow-hairline: 0 0 0 1px var(--p-zinc-800);
+  --shadow-raised: 0 1px 0 0 rgb(255 255 255 / 4%) inset;
+  --shadow-lift: 0 18px 40px -24px rgb(0 0 0 / 90%), 0 0 0 1px var(--p-zinc-700);
+  --shadow-overlay: 0 32px 64px -16px rgb(0 0 0 / 85%), 0 0 0 1px var(--p-zinc-800);
+  --shadow-focal: 0 0 0 1px rgb(255 255 255 / 10%), 0 24px 70px -30px rgb(229 229 229 / 25%);
+  --shadow-ring: 0 0 0 3px rgb(255 255 255 / 14%);
   --shadow-xl: var(--shadow-overlay);
-  --shadow-cta: 0 1px 2px 0 rgb(0 0 0 / 35%);
+  --shadow-cta: 0 1px 0 0 rgb(255 255 255 / 25%) inset;
 
   /* ----------------------------------------------------------------- motion
-   * One easing for entrances, one for exits, three durations. Every animation
-   * in the product references these — there is no ad-hoc timing anywhere. */
+   * "Smooth and restrained": one entrance easing, one symmetric easing, three
+   * durations plus a slow one for the ambient layer. Nothing in the product
+   * picks its own timing. */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
-  --dur-fast: 120ms;
-  --dur-base: 220ms;
-  --dur-slow: 420ms;
+  --dur-fast: 140ms;
+  --dur-base: 260ms;
+  --dur-slow: 560ms;
+  --dur-ambient: 14s;
 }
 
 @theme inline {
   /* ---------------------------------------------------------------- tier 3 */
-  /* Status + overlay roles used by the graph/evidence views, on the sev ramp. */
+  /* Status + overlay roles used by the graph/evidence views. */
   --color-st-open: var(--color-ink-muted);
   --color-st-supported: var(--color-info);
   --color-st-refuted: var(--color-fail);
@@ -223,10 +258,9 @@
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-ui-sans);
+  --font-sans: var(--font-ui-mono);
   --font-mono: var(--font-ui-mono);
   --font-display: var(--font-ui-display);
-  --font-editorial: var(--font-ui-editorial);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -258,159 +292,144 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
 
-  /* shadcn's radius scale, bound to the four roles above */
-  --radius-sm: 4px;
+  /* shadcn's whole radius scale collapses onto the three roles. A vendored
+     component cannot introduce a fourth corner by asking for `rounded-sm`. */
+  --radius-sm: var(--radius-inner);
   --radius-md: var(--radius-control);
-  --radius-lg: var(--radius-panel);
-  --radius-xl: var(--radius-panel);
-  --radius-2xl: var(--radius-bento);
-  --radius-3xl: var(--radius-bento);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-nested);
+  --radius-2xl: var(--radius-card);
+  --radius-3xl: var(--radius-card);
 }
 
 /* ---------------------------------------------------------------------------
- * THEME: dark (default). `:root` mirrors `.dark` so nothing renders light by
- * accident; `[data-theme="light"]` below is a complete, shipped alternative.
+ * THEME: dark. The source says not to swap the colour mode, so dark is not a
+ * preference here — it is the design. `[data-theme="light"]` below exists only
+ * so the token plumbing stays honest and a print/high-contrast need has an
+ * answer; it is not offered in the UI.
  * ------------------------------------------------------------------------ */
 :root,
 .dark {
   color-scheme: dark;
-  --radius: 8px;
+  --radius: 20px;
 
-  --background: var(--p-ground);
-  --foreground: var(--p-ink-mid);
-  --card: var(--p-base);
-  --card-foreground: var(--p-ink-mid);
-  --popover: var(--p-surface-2);
-  --popover-foreground: var(--p-ink-mid);
+  --background: var(--p-black);
+  --foreground: var(--p-zinc-300);
+  --card: var(--p-zinc-975);
+  --card-foreground: var(--p-zinc-300);
+  --popover: var(--p-zinc-900);
+  --popover-foreground: var(--p-zinc-300);
 
-  --primary: var(--p-violet-500);
-  --primary-foreground: #ffffff;
-  --secondary: var(--p-surface-2);
-  --secondary-foreground: var(--p-ink-mid);
-  --muted: var(--p-surface-1);
-  --muted-foreground: var(--p-ink-low);
-  --accent: rgb(155 135 255 / 12%); /* ghost / hover fill */
-  --accent-foreground: var(--p-ink-max);
+  --primary: var(--p-zinc-200);
+  --primary-foreground: var(--p-black);
+  --secondary: var(--p-zinc-900);
+  --secondary-foreground: var(--p-zinc-300);
+  --muted: var(--p-zinc-950);
+  --muted-foreground: var(--p-zinc-400);
+  --accent: rgb(255 255 255 / 8%); /* ghost / hover fill */
+  --accent-foreground: var(--p-white);
   --destructive: var(--p-red-500);
 
-  --border: var(--p-line-1);
-  --input: rgb(198 209 202 / 10%);
-  --ring: var(--p-violet-400);
+  --border: var(--p-zinc-800);
+  --input: rgb(255 255 255 / 10%);
+  --ring: var(--p-white);
 
-  --chart-1: var(--p-violet-400);
-  --chart-2: var(--p-teal-400);
+  --chart-1: var(--p-zinc-200);
+  --chart-2: var(--p-cyan-400);
   --chart-3: var(--p-amber-400);
   --chart-4: var(--p-sky-400);
-  --chart-5: var(--p-magenta-400);
+  --chart-5: var(--p-fuchsia-400);
 
-  --sidebar: var(--p-base);
-  --sidebar-foreground: var(--p-ink-mid);
-  --sidebar-primary: var(--p-violet-500);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgb(155 135 255 / 12%);
-  --sidebar-accent-foreground: var(--p-ink-max);
-  --sidebar-border: var(--p-line-1);
-  --sidebar-ring: var(--p-violet-400);
+  --sidebar: var(--p-black);
+  --sidebar-foreground: var(--p-zinc-300);
+  --sidebar-primary: var(--p-zinc-200);
+  --sidebar-primary-foreground: var(--p-black);
+  --sidebar-accent: rgb(255 255 255 / 8%);
+  --sidebar-accent-foreground: var(--p-white);
+  --sidebar-border: var(--p-zinc-800);
+  --sidebar-ring: var(--p-white);
 
   /* layout rhythm — read by the shell and the panel primitives */
-  --rail-w: 15rem;
-  --rail-w-collapsed: 3.5rem;
-  --topbar-h: 3.25rem;
+  --rail-w: 15.5rem;
+  --rail-w-collapsed: 4rem;
+  --topbar-h: 4rem;
   --page-max: 1560px;
 }
 
-/* ---------------------------------------------------------------------------
- * THEME: light. Only tier-2 + tier-3 are overridden — the palette ladder
- * inverts, the colour contract (accent = chrome, sev = data) is unchanged.
- * Shipped so a future "light mode" toggle is a one-line change, not a rebuild.
- * ------------------------------------------------------------------------ */
 [data-theme="light"] {
   color-scheme: light;
 
-  --color-ground: #f7f9f7;
-  --color-base: #ffffff;
-  --color-surface: #ffffff;
-  --color-surface-raised: #f2f5f2;
+  --color-ground: #ffffff;
+  --color-base: #fafafa;
+  --color-surface: #f4f4f5;
+  --color-surface-raised: #ffffff;
   --color-surface-overlay: #ffffff;
-  --color-line: #e1e7e2;
-  --color-line-strong: #cfd8d1;
-  --color-line-loud: #b3c0b7;
-  --color-ink: #27322c;
-  --color-ink-strong: #0b0e0c;
-  --color-ink-muted: #5b6a62;
-  --color-ink-faint: #8d9b93;
-  --color-brand: var(--p-violet-600);
-  --color-brand-solid: var(--p-violet-500);
-  --color-brand-hover: var(--p-violet-700);
-  --color-sev-low: #3f9e25;
-  --color-sev-medium: #a87400;
-  --color-sev-high: #d6410a;
-  --color-sev-critical: #c81e1e;
-  --color-pass: #3f9e25;
-  --color-fail: #c81e1e;
-  --color-warn: #a87400;
-  --color-info: #0a7c8a;
+  --color-invert: #09090b;
+  --color-invert-strong: #000000;
+  --color-invert-ink: #ffffff;
+  --color-invert-ink-muted: #a1a1aa;
+  --color-line: #e4e4e7;
+  --color-line-strong: #d4d4d8;
+  --color-line-loud: #a1a1aa;
+  --color-ink-strong: #000000;
+  --color-ink: #27272a;
+  --color-ink-muted: #52525b;
+  --color-ink-faint: #71717a;
+  --color-brand: #000000;
+  --color-brand-solid: #09090b;
+  --color-brand-hover: #27272a;
+  --color-brand-ink: #ffffff;
+  --color-sev-low: #4d7c0f;
+  --color-sev-medium: #b45309;
+  --color-sev-high: #c2410c;
+  --color-sev-critical: #b91c1c;
+  --color-pass: #4d7c0f;
+  --color-fail: #b91c1c;
+  --color-warn: #b45309;
+  --color-info: #0e7490;
 
-  --color-void: #f7f9f7;
-  --color-carbon: #ffffff;
-  --color-obsidian: #f2f5f2;
-  --color-graphite: #e1e7e2;
-  --color-smoke: #b3c0b7;
-  --color-ash: #8d9b93;
-  --color-fog: #5b6a62;
-  --color-mist: #27322c;
-  --color-bone: #16201a;
-  --color-paper: #0b0e0c;
-  --color-cream: #27322c;
-  --color-signal: var(--p-violet-600);
-  --color-pulse-green: #3f9e25;
-  --color-coral-red: #c81e1e;
-  --color-signal-teal: #0a7c8a;
-
-  --background: #f7f9f7;
-  --foreground: #27322c;
-  --card: #ffffff;
-  --card-foreground: #27322c;
+  --background: #ffffff;
+  --foreground: #27272a;
+  --card: #fafafa;
+  --card-foreground: #27272a;
   --popover: #ffffff;
-  --popover-foreground: #27322c;
-  --secondary: #f2f5f2;
-  --secondary-foreground: #27322c;
-  --muted: #f2f5f2;
-  --muted-foreground: #5b6a62;
-  --accent: rgb(124 92 255 / 10%);
-  --accent-foreground: #0b0e0c;
-  --border: #e1e7e2;
-  --input: rgb(11 14 12 / 10%);
-  --ring: var(--p-violet-500);
-
-  --shadow-inset-top: inset 0 1px 0 0 rgb(255 255 255 / 80%);
-  --shadow-raised: 0 1px 2px 0 rgb(11 14 12 / 8%);
-  --shadow-overlay: 0 16px 48px -12px rgb(11 14 12 / 18%), 0 0 0 1px #e1e7e2;
+  --popover-foreground: #27272a;
+  --primary: #09090b;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #27272a;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --accent: rgb(0 0 0 / 6%);
+  --accent-foreground: #000000;
+  --border: #e4e4e7;
+  --input: rgb(0 0 0 / 12%);
+  --ring: #000000;
 }
 
 /* ---------------------------------------------------------------------------
- * DENSITY. Compact is the power-user mode: same type scale, tighter boxes.
- * Panels and rows read these instead of hard-coding padding, so a density
- * toggle never requires touching a component.
+ * DENSITY. The source asks for "clear information density" and 24px card
+ * padding; comfortable honours that literally, compact is the power-user mode.
+ * Panels and rows read these instead of hard-coding padding.
  * ------------------------------------------------------------------------ */
 :root,
 [data-density="comfortable"] {
-  --panel-pad-x: 1rem;
-  --panel-pad-y: 0.875rem;
-  --panel-head-h: 2.75rem;
-  --row-h: 2.25rem;
-  --row-pad-x: 0.75rem;
-  --stack-gap: 1rem;
-  --section-gap: 2.5rem;
+  --panel-pad-x: var(--space-card);
+  --panel-pad-y: var(--space-card);
+  --panel-head-h: 3.25rem;
+  --row-h: 2.5rem;
+  --row-pad-x: 1rem;
+  --stack-gap: var(--space-gap);
+  --section-gap: var(--space-section);
 }
 [data-density="compact"] {
-  --panel-pad-x: 0.75rem;
-  --panel-pad-y: 0.625rem;
-  --panel-head-h: 2.25rem;
-  --row-h: 1.75rem;
-  --row-pad-x: 0.5rem;
+  --panel-pad-x: 1rem;
+  --panel-pad-y: 0.75rem;
+  --panel-head-h: 2.5rem;
+  --row-h: 1.875rem;
+  --row-pad-x: 0.625rem;
   --stack-gap: 0.625rem;
-  --section-gap: 1.5rem;
+  --section-gap: 2.5rem;
 }
 
 @layer base {
@@ -418,129 +437,139 @@
     @apply border-border outline-ring/50;
   }
   html {
-    font-size: 15px;
+    font-size: 16px;
     scrollbar-gutter: stable;
+    background: var(--p-black);
   }
   body {
     @apply bg-background text-foreground;
-    letter-spacing: -0.011em;
-    /* Inter's alternates: single-storey g, open digits, slashed zero */
-    font-feature-settings: "cv01" on, "ss03" on, "zero" on, "tnum" on;
+    font-family: var(--font-ui-mono), "JetBrains Mono", ui-monospace, monospace;
+    font-size: var(--text-body);
+    line-height: 1.6;
+    /* Slashed zero and tabular figures: in this product almost every number is
+       compared against another number directly above it. */
+    font-feature-settings: "zero" on, "tnum" on, "calt" off;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
-  /* Headings are Barlow Condensed — the Apex display face. Condensed buys ~20%
-     more characters per line, which is why long qualified symbol names and repo
-     paths fit in a title without truncating. A font-* class on the element wins. */
+  /* Headings are Inter — the display face. This is the inverse of the usual
+     arrangement and it is the fastest signal in the interface: Inter means a
+     person wrote it, mono means a machine produced it. */
   h1,
   h2,
   h3,
   h4 {
     color: var(--color-ink-strong);
-    font-family: var(--font-ui-display), "Barlow Condensed", "Inter", system-ui, sans-serif;
+    font-family: var(--font-ui-display), "Inter", system-ui, sans-serif;
     font-weight: 500;
     letter-spacing: 0;
+    font-feature-settings: "cv01" on, "ss03" on, "tnum" on;
   }
   h1 {
     line-height: 1.04;
   }
 
-  code,
-  kbd,
-  samp,
-  .font-mono {
-    font-feature-settings: "zero" on, "tnum" on, "calt" off;
-    letter-spacing: -0.01em;
-  }
-
   ::selection {
-    background: rgb(124 92 255 / 40%);
-    color: var(--color-ink-strong);
+    background: var(--p-zinc-200);
+    color: var(--p-black);
   }
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-inner);
   }
-  /* A mouse click on a button should not draw the keyboard ring. */
   :focus:not(:focus-visible) {
     outline: none;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-line-loud) transparent;
+    scrollbar-color: var(--color-line-strong) transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-line-loud);
+    background: var(--color-line-strong);
     border: 3px solid transparent;
     border-radius: 9999px;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-ink-faint);
+    background: var(--color-line-loud);
     background-clip: content-box;
   }
 }
 
 /* ---------------------------------------------------------------------------
- * MATERIALS — the handful of surface treatments the system allows.
+ * MATERIALS — the surface treatments the system allows, and no others.
  * ------------------------------------------------------------------------ */
 
-/* Measurement grid, from the Apex/Zenith-X instrument panels. Behind content only. */
+/* The mesh grid. The source is a decentralised-mesh dashboard; the grid is its
+   substrate, so it sits behind content at low contrast and never on top of it. */
 .bg-grid {
-  background-image: linear-gradient(to right, rgb(198 209 202 / 4%) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(198 209 202 / 4%) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-image: linear-gradient(to right, rgb(255 255 255 / 3.5%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 3.5%) 1px, transparent 1px);
+  background-size: 64px 64px;
 }
 .bg-dots {
-  background-image: radial-gradient(rgb(198 209 202 / 6%) 1px, transparent 1px);
-  background-size: 22px 22px;
+  background-image: radial-gradient(rgb(255 255 255 / 6%) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
-/* Film grain, so large flat panels do not band on OLED. */
+/* A grid that fades out from its top-left origin, for hero and panel grounds. */
+.bg-grid-fade {
+  background-image: linear-gradient(to right, rgb(255 255 255 / 4%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 4%) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(120% 90% at 20% 0%, #000 0%, transparent 72%);
+}
+/* Film grain, so large flat near-black panels do not band on OLED. */
 .bg-noise,
 .noise-overlay {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Skeuomorphic nesting: a raised element is a lighter surface with a light top
-   edge, as if lit from above. Used by panels, chips and the metric readouts. */
+/* The inverted focal surface. One per viewport. */
+.material-focal {
+  background: var(--color-invert);
+  color: var(--color-invert-ink);
+  box-shadow: var(--shadow-focal);
+}
 .material-raised {
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-raised);
 }
 .material-recessed {
-  background: color-mix(in oklab, var(--color-ground) 70%, black);
-  box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 45%);
+  background: var(--p-black);
+  box-shadow: inset 0 0 0 1px var(--color-line);
 }
 
-/* The accent hairline that marks an active region (nav item, selected row). */
+/* The marker on an active nav item: a short vertical bar, not a filled pill. */
 .rail-marker {
   position: relative;
 }
 .rail-marker::before {
   content: "";
   position: absolute;
-  inset-block: 0.35rem;
+  inset-block: 0.5rem;
   left: 0;
   width: 2px;
   border-radius: 9999px;
-  background: var(--color-brand-solid);
+  background: var(--color-invert-strong);
 }
 
 /* ---------------------------------------------------------------------------
- * MOTION — three primitives. Everything honours `data-motion="reduced"` and
- * `prefers-reduced-motion`, enforced in one place at the bottom of this block.
+ * MOTION — the five cues the source names: masked reveal, staggered entrance,
+ * hover lift, scroll-triggered transition, ambient movement. Every one of them
+ * honours `data-motion="reduced"` and `prefers-reduced-motion`, enforced once
+ * at the bottom of this block.
  * ------------------------------------------------------------------------ */
 @keyframes as-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -553,7 +582,7 @@
     opacity: 1;
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
 }
 @keyframes as-sweep {
@@ -564,13 +593,16 @@
     transform: translateX(100%);
   }
 }
-@keyframes as-glow {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 3px rgb(139 224 110 / 45%));
+/* Ambient: the slow drift of the mesh behind the content. */
+@keyframes as-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.04);
   }
   50% {
-    filter: drop-shadow(0 0 9px rgb(139 224 110 / 75%));
+    transform: translate3d(-1.5%, -1%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.04);
   }
 }
 
@@ -580,39 +612,78 @@
 .as-pulse {
   animation: as-pulse 2s var(--ease-in-out-quart) infinite;
 }
-/* Indeterminate progress / streaming: a light sweeps across the surface. */
+/* Indeterminate progress / streaming. */
 .as-sweep::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgb(155 135 255 / 14%), transparent);
-  animation: as-sweep 1.4s var(--ease-in-out-quart) infinite;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 10%), transparent);
+  animation: as-sweep 1.5s var(--ease-in-out-quart) infinite;
 }
-.as-glow {
-  animation: as-glow 2.4s var(--ease-in-out-quart) infinite;
+.as-drift {
+  animation: as-drift var(--dur-ambient) var(--ease-in-out-quart) infinite;
 }
 /* Staggered entrance for lists: set `style={{ "--i": n }}` on the child. */
 .as-stagger > * {
   animation: as-in var(--dur-base) var(--ease-out-quint) backwards;
-  animation-delay: calc(var(--i, 0) * 28ms);
+  animation-delay: calc(var(--i, 0) * 34ms);
+}
+/* Hover lift. Applied to anything that navigates; never to anything you read. */
+.as-lift {
+  transition: transform var(--dur-base) var(--ease-out-quint), border-color var(--dur-base) var(--ease-out-quint),
+    background-color var(--dur-base) var(--ease-out-quint);
+}
+.as-lift:hover {
+  transform: translateY(-3px);
 }
 
-/* Landing word reveal (words rise out of a blur, staggered by --i). */
-.rv-w {
-  display: inline-block;
-  white-space: pre;
+/* Masked reveal. Lines rise out of their own clip box, staggered by --i. Used
+   for the hero and for section titles entering the viewport. */
+.rv-mask {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.08em;
 }
-[data-reveal] .rv-w {
+.rv-l {
+  display: block;
+}
+/* THE `html[data-anim="on"]` GATE, AND WHY EVERY HIDDEN START STATE SITS BEHIND IT
+   An entrance animation works by painting the element invisible and then
+   revealing it. That is safe only if something is guaranteed to do the
+   revealing. The attribute is set by the inline script in app/layout.tsx, which
+   runs before first paint and only ever runs when scripting is on — so the
+   hidden start state cannot exist in a document that has no way out of it.
+
+   Without this gate the failure is total and silent: no JS, a blocked bundle,
+   a hydration error, or an IntersectionObserver that never fires (a tab
+   restored in the background never intersects) leaves the headline at
+   `opacity: 0` forever. The page returns HTTP 200, the text is in the DOM and
+   in the accessibility tree, and the reader sees nothing. Treat any new
+   `opacity: 0` resting state as belonging inside this gate. */
+html[data-anim="on"] [data-reveal] .rv-l {
   opacity: 0;
-  transform: translateY(0.45em);
-  filter: blur(10px);
-  transition: opacity 0.9s var(--ease-out-quint), transform 0.9s var(--ease-out-quint), filter 0.9s var(--ease-out-quint);
-  transition-delay: calc(var(--i, 0) * 55ms);
+  transform: translateY(105%);
+  transition: opacity var(--dur-slow) var(--ease-out-quint), transform var(--dur-slow) var(--ease-out-quint);
+  transition-delay: calc(var(--i, 0) * 80ms);
 }
-[data-reveal="in"] .rv-w {
+/* Scoped to the same gate so it matches the start state's specificity —
+   `[data-reveal="in"]` alone is (0,1,0) and would lose to it. */
+html[data-anim="on"] [data-reveal="in"] .rv-l {
   opacity: 1;
   transform: none;
-  filter: none;
+}
+
+/* Scroll-triggered section entrance, driven by the IntersectionObserver in
+   `components/motion.tsx`. One class, so no page writes its own observer. */
+html[data-anim="on"] [data-enter] {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity var(--dur-slow) var(--ease-out-quint), transform var(--dur-slow) var(--ease-out-quint);
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+html[data-anim="on"] [data-enter="in"] {
+  opacity: 1;
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -624,10 +695,13 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  html:not([data-motion="full"]) [data-reveal] .rv-w {
+  html:not([data-motion="full"]) .as-lift:hover {
+    transform: none;
+  }
+  html:not([data-motion="full"]) [data-reveal] .rv-l,
+  html:not([data-motion="full"]) [data-enter] {
     opacity: 1;
     transform: none;
-    filter: none;
   }
 }
 html[data-motion="reduced"] *,
@@ -637,10 +711,13 @@ html[data-motion="reduced"] *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
-html[data-motion="reduced"] [data-reveal] .rv-w {
+html[data-motion="reduced"] .as-lift:hover {
+  transform: none;
+}
+html[data-motion="reduced"] [data-reveal] .rv-l,
+html[data-motion="reduced"] [data-enter] {
   opacity: 1;
   transform: none;
-  filter: none;
 }
 
 /* ---------------------------------------------------------------------------
@@ -649,7 +726,7 @@ html[data-motion="reduced"] [data-reveal] .rv-w {
 .react-flow {
   --xy-background-color: transparent;
   --xy-edge-stroke: var(--color-line-loud);
-  --xy-edge-stroke-selected: var(--color-accent);
+  --xy-edge-stroke-selected: var(--color-invert-strong);
   --xy-minimap-background-color: var(--color-base);
   --xy-controls-button-background-color: var(--color-surface);
   --xy-controls-button-color: var(--color-ink);
@@ -665,21 +742,21 @@ html[data-motion="reduced"] [data-reveal] .rv-w {
   display: none;
 }
 
-/* Range inputs are instrument playheads: hairline track, accent thumb. */
+/* Range inputs are instrument playheads: hairline track, white thumb. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
-  height: 14px;
+  height: 16px;
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
+  height: 2px;
   border-radius: 9999px;
   background: var(--color-line-strong);
 }
 input[type="range"]::-moz-range-track {
-  height: 3px;
+  height: 2px;
   border-radius: 9999px;
   background: var(--color-line-strong);
 }
@@ -687,23 +764,22 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 12px;
   height: 12px;
-  margin-top: -4.5px;
+  margin-top: -5px;
   border: 0;
   border-radius: 9999px;
-  background: var(--color-brand-solid);
-  box-shadow: var(--shadow-accent-glow);
+  background: var(--color-invert-strong);
+  box-shadow: var(--shadow-ring);
 }
 input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border: 0;
   border-radius: 9999px;
-  background: var(--color-brand-solid);
+  background: var(--color-invert-strong);
 }
 
-/* Landing page: pure black behind the hero, no scrollbar chrome. */
+/* The landing page hides scrollbar chrome so the first viewport is uninterrupted. */
 :root:has(.landing) {
-  background: #000;
   scrollbar-width: none;
 }
 :root:has(.landing)::-webkit-scrollbar,
@@ -730,9 +806,10 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
-/* Printing an incident/impact report should produce a clean document. */
+/* Printing an impact report should produce a clean document. */
 @media print {
   [data-print="hide"],
+  canvas,
   header[data-shell],
   aside[data-shell] {
     display: none !important;

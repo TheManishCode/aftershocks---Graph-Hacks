@@ -1,5 +1,56 @@
 # Session log
 
+## 2026-10-18 (D28): the Aether Node skin, and a bug that returns 200 and shows nothing
+
+**Done.** Re-skinned the rebuilt UI onto the Aether Node brief (CHANGELOG D28). The chrome is
+now achromatic, which leaves the severity ramp as the only hue in the product; the brief's
+`surface: #E5E5E5` / `text-primary: #FFFFFF` pair is 1.1:1 and was resolved as two roles —
+near-black hairline-separated panels plus one inverted focal object per viewport. Two type
+faces instead of three, radii card 24 / control 20 / pill, spacing 8/16/24/80, control labels
+on the declared mono label step, display reserved for the hero. `Panel tone="brand"` →
+`tone="emphasis"`. Three latent `text-white`-on-light pairings fixed. `web/DESIGN.md` rewritten
+(it still described the retired Seismic Instrument system verbatim) and `/design` updated to
+demonstrate `tone="focal"`, which had shipped undemonstrated.
+
+**The real find.** `components/motion.tsx` carried a comment claiming these components "can only
+ever add movement, never hide content" and that the blank-page failure mode "is designed out
+rather than guarded against." Checking the claim against the CSS proved it false: `Reveal`
+rendered `data-reveal=""`, which matched an ungated `opacity: 0` rule, so any client where the
+observer never fires — no JS, blocked bundle, hydration error, background-restored tab — saw a
+page that returned 200, had every word in the DOM and in the accessibility tree, and showed
+nothing. Two more faults in the same mechanism: `Enter` rendered `data-enter={... : undefined}`
+so it had no start state and never animated, and `useEnter`'s 0.15 threshold is unreachable for
+an element taller than ~6.7 viewports (`intersectionRatio` is visible over *total* area). Fixed
+with the `html[data-anim="on"]` gate, specificity-matched resolved states, an always-present
+attribute, and a zero threshold.
+
+Found because the browser pane in this environment never composites, which makes it behave
+exactly like a client whose observer never fires. The environment limitation was the reproduction.
+
+**Also fixed.** `heal_stream` validated the run-id before the run gate, so an unauthorised caller
+got a 400 about their id instead of a 403. Input validation ahead of authorisation is how a gate
+starts answering questions for people who have not passed it.
+
+**Verified (actually run).** `pytest` 174 passed. `tsc --noEmit` clean; `next lint` clean; `jest`
+**35 passed / 4 suites**, including the new `app/motion-safety.test.ts`, which was mutation-checked
+— remove the gate from `globals.css` and it fails. `next build` clean, 14 routes. On a freshly
+started `next start` over a clean build: all 12 routes 200, each with exactly one `<main>`; the
+served HTML carries no `data-anim` (so the no-JS path is unhidden); the gate compiles into the
+served stylesheet as all four expected rules; the hero text is present in the no-JS HTML. A full
+live sweep of every route in `api.py` was run by a Sonnet subagent against a real FastAPI app —
+health 200/503, run gate default-refuse and allow paths, and confirmation that no provider route
+returns a raw key.
+
+**Not verified — do not claim otherwise.** Still nothing has been *seen*. The browser pane does not
+composite in this environment, so there is no screenshot, no click-through and no confirmation of
+hydrated data loading or the ambient canvas at any point. The model-backed paths (Ask's answer, the
+heal loop) remain unexercised — no provider key is configured here.
+
+**Known, still open.** The SSE disconnect behaviour of `GET /repos/{r}/events` could not be cleanly
+exercised with Starlette's `TestClient`; the subagent reported it blocked, not failing, and it needs
+a real HTTP client against a running `aftershock serve`. testlab is still CLI-only with no API route,
+so the UI cannot reach it.
+
 ## 2026-10-18 (D27): the web UI, rebuilt
 
 **Done.** Rebuilt the frontend from the backend outward on branch `ui-rebuild`, 5 commits
@@ -31,11 +82,14 @@ been no visual check, no click-through and no screenshot at any point in this re
 paths — Ask's streaming answer and the heal loop — are unexercised, because no provider key is configured
 on this machine; only their non-model branches have been rendered.
 
-**Known, left alone deliberately.** `aftershock/config.py:52` defaults `model` to `"claude-opus-5-5"`,
-which matches no documented Claude model id. The same string is in `analysis/heal.py:48`, `README.md`,
-`ARCHITECTURE.md` and two assertions in `tests/test_agent.py`, so changing it breaks the suite — it needs
-its own commit. The new provider catalogue in `aftershock/providers.py` uses real ids. Also: testlab is
-still CLI-only with no API route, so the UI cannot reach it.
+**Known, still open.** testlab is CLI-only with no API route, so the UI cannot reach it.
+
+### Model id corrected
+
+`aftershock/config.py:52` and `analysis/heal.py:48` defaulted to `"claude-opus-5-5"`, which matches no
+documented Claude model id — the API would have rejected every Ask and heal call. Replaced with
+`claude-opus-5` (the id the provider catalogue in `aftershock/providers.py` already listed), along with
+the two assertions in `tests/test_agent.py` and the mentions in `README.md` and `ARCHITECTURE.md`.
 
 
 ## 2026-10-18 (D26): acting on the graph

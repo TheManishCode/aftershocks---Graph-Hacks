@@ -225,7 +225,7 @@ export function SeverityLegend({
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>
       {ORDER.filter((s) => !omit.includes(s)).map((s) => (
         <span key={s} className="inline-flex items-center gap-1.5 font-mono text-micro uppercase text-ink-muted">
-          <span className={cn("size-2 rounded-[2px]", SEV_BG[s])} aria-hidden />
+          <span className={cn("size-2 rounded-full", SEV_BG[s])} aria-hidden />
           {labels?.[s] ?? s}
         </span>
       ))}

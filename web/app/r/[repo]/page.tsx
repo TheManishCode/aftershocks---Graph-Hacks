@@ -74,7 +74,7 @@ function Subsystems({ repo, d }: { repo: string; d: Overview }) {
         {nodes.length > 1 ? (
           <GraphCanvas nodes={nodes} edges={edges} height={380} selected={sel !== null ? String(sel) : undefined} onSelect={(id) => setSel(Number(id))} />
         ) : (
-          <div className="grid h-[380px] place-items-center rounded-panel border border-dashed border-line-strong text-body-sm text-ink-muted">
+          <div className="grid h-[380px] place-items-center rounded-nested border border-dashed border-line-strong text-body-sm text-ink-muted">
             No links between subsystems to draw.
           </div>
         )}
@@ -82,7 +82,7 @@ function Subsystems({ repo, d }: { repo: string; d: Overview }) {
           {chosen ? (
             <div>
               <div className="mb-2 flex items-center gap-2">
-                <span className="size-2.5 rounded-[2px]" style={{ background: tint(chosen.name) }} />
+                <span className="size-2.5 rounded-full" style={{ background: tint(chosen.name) }} />
                 <span className="font-mono text-body-sm text-ink-strong">{chosen.name}</span>
                 <span className="text-caption text-ink-muted">
                   {chosen.size} files{chosen.size > chosen.files.length ? `, first ${chosen.files.length} shown` : ""}
@@ -104,7 +104,7 @@ function Subsystems({ repo, d }: { repo: string; d: Overview }) {
               {d.subsystems.map((s) => (
                 <button key={s.id} type="button" onClick={() => setSel(s.id)} className="group block w-full text-left">
                   <div className="flex items-center gap-2 text-caption">
-                    <span className="size-2 shrink-0 rounded-[2px]" style={{ background: tint(s.name) }} />
+                    <span className="size-2 shrink-0 rounded-full" style={{ background: tint(s.name) }} />
                     <span className="truncate font-mono text-ink group-hover:text-ink-strong">{s.name}</span>
                     <span className="ml-auto font-mono text-micro text-ink-muted tabular-nums">{s.size}</span>
                   </div>
@@ -221,7 +221,7 @@ export default function OverviewPage() {
           <Panel title="Load-bearing symbols" note="PageRank over calls" bodyClassName="p-2">
             <div className="space-y-0.5">
               {d.central.slice(0, 12).map((s) => (
-                <div key={s.id} className="flex min-h-[var(--row-h)] items-center gap-2 rounded-[6px] px-2 text-caption hover:bg-accent">
+                <div key={s.id} className="flex min-h-[var(--row-h)] items-center gap-2 rounded-inner px-2 text-caption hover:bg-accent">
                   <SymLink repo={repo} id={s.id} name={s.qname} className="min-w-0 truncate text-body-sm" />
                   <span className="hidden truncate font-mono text-micro text-ink-faint sm:inline">{s.file}</span>
                   <span className="ml-auto shrink-0 font-mono text-micro text-ink-muted tabular-nums">{s.fan_in}↙</span>
@@ -298,7 +298,7 @@ export default function OverviewPage() {
                 .sort((a, b) => b[1] - a[1])
                 .map(([lang, n], i) => (
                   <li key={lang} className="flex items-center gap-2 text-caption">
-                    <span className={cn("size-2 shrink-0 rounded-[2px]", SERIES[i % SERIES.length])} aria-hidden />
+                    <span className={cn("size-2 shrink-0 rounded-full", SERIES[i % SERIES.length])} aria-hidden />
                     <span className="truncate text-ink">{lang}</span>
                     <span className="ml-auto shrink-0 font-mono text-ink-muted tabular-nums">
                       {num(n)} · {pct(n / langTotal)}
@@ -352,7 +352,7 @@ export default function OverviewPage() {
             {d.dead_code.length ? (
               <Scroller className="max-h-80 space-y-0.5">
                 {d.dead_code.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-caption" title={s.reason}>
+                  <div key={s.id} className="flex items-center gap-2 rounded-inner px-2 py-1 text-caption" title={s.reason}>
                     <SymLink repo={repo} id={s.id} name={s.qname} className="min-w-0 truncate text-body-sm" />
                     <span className="hidden truncate font-mono text-micro text-ink-faint sm:inline">{s.file}</span>
                     <span

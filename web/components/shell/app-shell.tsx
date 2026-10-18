@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Keyboard users land here first; the rail and content both have anchors. */}
       <a
         href="#content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-control focus:bg-brand-solid focus:px-3 focus:py-2 focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-control focus:bg-invert focus:px-3 focus:py-2 focus:font-mono focus:text-label focus:font-semibold focus:tracking-[0.06em] focus:text-invert-ink focus:uppercase"
       >
         Skip to content
       </a>

@@ -49,7 +49,7 @@ import { useModKey, useQuery, useRepo } from "@/lib/hooks";
 /** Six numbers across the top of a symbol or file. The shape is identical for both so the eye does not have to re-learn it. */
 function Metrics({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-2 gap-4 rounded-panel border border-line bg-surface-raised p-4 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-4 rounded-nested border border-line bg-surface-raised p-4 sm:grid-cols-3 lg:grid-cols-6">
       {children}
     </div>
   );
@@ -60,7 +60,7 @@ function NeighborList({ repo, items, empty }: { repo: string; items: Neighbor[];
   return (
     <ul className="space-y-0.5">
       {items.map((n) => (
-        <li key={`${n.id}:${n.type}`} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+        <li key={`${n.id}:${n.type}`} className="flex items-center gap-2 rounded-inner px-2 py-1 hover:bg-accent">
           <SymLink repo={repo} id={n.id} name={n.name} className="min-w-0 truncate text-caption" />
           {/* Only non-call edges are labelled: CALLS is the default reading, and
               tagging every row with it would bury the inheritance edges. */}
@@ -127,7 +127,7 @@ function SymbolView({ repo, d }: { repo: string; d: SymbolDetail }) {
       </div>
 
       {s.signature && (
-        <pre className="overflow-x-auto rounded-panel border border-line bg-ground px-4 py-3 font-mono text-code text-ink">
+        <pre className="overflow-x-auto rounded-nested border border-line bg-ground px-4 py-3 font-mono text-code text-ink">
           {s.signature}
         </pre>
       )}
@@ -233,7 +233,7 @@ function FileView({ repo, d }: { repo: string; d: FileDetail }) {
             {syms
               .sort((a, b) => a.line - b.line)
               .map((s) => (
-                <li key={s.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+                <li key={s.id} className="flex items-center gap-2 rounded-inner px-2 py-1 hover:bg-accent">
                   <Mono className="w-10 shrink-0 text-right text-micro text-ink-faint">{s.line}</Mono>
                   <SymLink repo={repo} id={s.id} name={s.qname} className="min-w-0 truncate text-caption" />
                   <span className="ml-auto shrink-0 text-micro text-ink-faint">{s.kind}</span>
@@ -331,7 +331,7 @@ function Candidates({ repo, items }: { repo: string; items: SymbolBrief[] }) {
     <Panel title={`${items.length} symbols share that name`} note="Pick the one you meant." bodyClassName="p-2">
       <ul className="space-y-0.5">
         {items.map((c) => (
-          <li key={c.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1 hover:bg-accent">
+          <li key={c.id} className="flex items-center gap-2 rounded-inner px-2 py-1 hover:bg-accent">
             <Code className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
             <SymLink repo={repo} id={c.id} name={c.qname} className="text-caption" />
             <Mono className="ml-auto text-micro text-ink-faint">

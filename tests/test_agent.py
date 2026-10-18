@@ -89,7 +89,7 @@ class FakeMessages:
 
 
 def _resp(stop, *blocks):
-    return NS(stop_reason=stop, content=list(blocks), model="claude-opus-5-5",
+    return NS(stop_reason=stop, content=list(blocks), model="claude-opus-5",
               usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=3))
 
 
@@ -133,7 +133,7 @@ def test_claude_loop_runs_tools_and_reports_errors(mini, fake_claude):
     assert [s["error"] for s in res["steps"]] == [False, True]
     assert res["usage"] == {"input": 20, "output": 10, "cache_read": 6}
     first, second = msgs.calls
-    assert first["model"] == "claude-opus-5-5" and first["fallbacks"] == "default"
+    assert first["model"] == "claude-opus-5" and first["fallbacks"] == "default"
     assert first["cache_control"] == {"type": "ephemeral"}
     results = second["messages"][-1]["content"]
     assert [r["tool_use_id"] for r in results] == ["t1", "t2"]  # all results in one user turn, in order

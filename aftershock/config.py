@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(
         None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "AFTERSHOCK_ANTHROPIC_API_KEY")
     )
-    model: str = "claude-opus-5-5"
+    model: str = "claude-opus-5"
 
     @field_validator("*", mode="before")
     @classmethod

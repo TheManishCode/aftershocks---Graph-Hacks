@@ -539,9 +539,14 @@ class Store:
             self.redis.srem(self.LAB_KEY, name)
 
     def ping(self) -> bool:
+        # GraphUnavailable as well as the socket errors: `self.redis` goes through
+        # the `db` property, which turns a *first* failed connection into
+        # GraphUnavailable rather than a RedisError. Letting that escape would
+        # make `/api/v1/health` throw a 500 in precisely the case it exists to
+        # report cleanly — FalkorDB not up yet. The contract is a bool; keep it.
         try:
             return bool(self.redis.ping())
-        except (RedisError, OSError):
+        except (RedisError, OSError, GraphUnavailable):
             return False
 
     def publish(self, repo: str, event: dict, maxlen: int = 2000) -> int:

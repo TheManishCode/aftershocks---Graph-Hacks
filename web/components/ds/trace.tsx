@@ -263,7 +263,7 @@ export function TraceCollapsible({
   const id = React.useId();
   if (!steps) return null;
   return (
-    <div className={cn("rounded-panel border border-line bg-base", className)}>
+    <div className={cn("rounded-nested border border-line bg-base", className)}>
       <button
         type="button"
         data-hit
@@ -271,7 +271,7 @@ export function TraceCollapsible({
         aria-expanded={open}
         aria-controls={id}
         className={cn(
-          "group flex w-full items-center gap-2 rounded-panel px-2.5 py-2 text-left",
+          "group flex w-full items-center gap-2 rounded-nested px-2.5 py-2 text-left",
           "transition-colors duration-[var(--dur-fast)] hover:bg-accent/60",
         )}
       >

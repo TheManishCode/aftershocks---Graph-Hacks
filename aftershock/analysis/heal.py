@@ -45,7 +45,7 @@ from ..runtime.pytest_run import Outcome, node_to_symbol, run_measured, run_sele
 
 MAX_ROUNDS_DEFAULT = 3
 CLAUDE_TIMEOUT_S = 120
-FIX_MODEL = "claude-opus-5-5"
+FIX_MODEL = "claude-opus-5"
 MAX_SUSPECT_FILE_CHARS = 20_000
 MAX_REGION_LINES = 400
 MAX_CONTEXT_HOPS = 4  # source of at most this many symbols along the chain goes into the prompt

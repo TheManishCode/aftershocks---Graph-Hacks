@@ -44,6 +44,62 @@ disagreed.
   `LEVEL_*`/`TIER_*` colour maps in `lib/format.ts`, the `.epi-*` animation aliases and
   the page-furniture shim in `components/kit.tsx`.
 
+### Changed: the Aether Node visual language (D28)
+
+The rebuilt UI was re-skinned onto the Aether Node design brief. Almost all of it was an
+edit to the token tier in `app/globals.css`; the components that needed touching were the
+handful that had assumed the chrome would always be dark.
+
+- **The chrome has no hue.** Brand violet is gone. Actions, navigation, links, focus and
+  selection are white / `#E5E5E5` / black, which leaves the severity ramp as the only
+  colour in the product. `--color-brand` survives as the name for "the application
+  speaking" and now resolves to white; `Panel tone="brand"` was renamed `tone="emphasis"`
+  because a token called "brand" would have been lying about what it drew.
+- **One inverted surface per viewport.** The brief's `surface: #E5E5E5` and
+  `text-primary: #FFFFFF` cannot describe the same box (1.1:1), so they are modelled as
+  two roles: near-black panels separated by `#27272A` hairlines, plus a single inverted
+  focal object. `Panel tone="focal"` is that object, and it is now demonstrated on
+  `/design`.
+- **Two faces, not three.** Barlow Condensed is dropped. JetBrains Mono is the default
+  including body prose; Inter carries the display step and page titles. Radii collapse to
+  card 24 / control 20 / pill, with 16 and 12 for nesting so corners stay concentric.
+  Spacing is four declared steps (8/16/24/80).
+- **Control labels are a type step, not a guess.** Every button is mono 12/600/0.06em
+  uppercase; the `link` variant opts out, because a link inside prose is prose. The 64px
+  display step is now the hero's alone — `PageHeader` uses `heading`.
+- **Fixed three latent 1.1:1 pairings** that only became visible once the chrome went
+  light: `text-white` on the skip link, on the active `Segmented` segment, and on the
+  logo mark, all now `text-invert-ink`.
+
+### Fixed: entrance animations could hide a page permanently (D28)
+
+`Enter` and `Reveal` paint their children at `opacity: 0` until an IntersectionObserver
+fires. Three independent faults meant that could never resolve, and each one produced a
+page that returned HTTP 200 with all of its text in the DOM and in the accessibility tree
+and nothing visible on screen — a failure no status code or DOM assertion can detect.
+
+- `Reveal` rendered `data-reveal=""` with no scripting gate, so with JavaScript off, a
+  blocked bundle or a hydration error the content stayed hidden forever. Every
+  `opacity: 0` resting state now sits behind `html[data-anim="on"]`, set by the inline
+  script in `app/layout.tsx` *before and outside* its `try/catch` so a throwing
+  `localStorage` cannot arm the animation without arming the gate.
+- The resolved states are scoped to the same gate, so `[data-enter="in"]` (0,1,0) can no
+  longer lose on specificity to a gated start state (0,2,1).
+- `Enter` passed `data-enter={shown ? "in" : undefined}`, so the transition had no start
+  state and never animated at all.
+- `useEnter`'s threshold defaulted to `0.15`. `intersectionRatio` is visible area over
+  *total* area, so an element taller than ~6.7 viewports could never reach it and would
+  have stayed invisible. The default is now `0`; depth tuning belongs in `rootMargin`.
+
+`web/app/motion-safety.test.ts` asserts all four invariants against the source, and was
+confirmed to fail when the gate is removed.
+
+### Fixed: `heal/stream` validated input before authorising the caller (D28)
+
+`POST /repos/{r}/runs/{id}/heal/stream` checked the run-id shape before the run gate, so a
+caller who was not allowed to run anything received a 400 telling them their id was
+malformed instead of the 403 they get on `run/stream`. The gate now comes first.
+
 ### Added: acting on the graph (D26)
 
 - **Measured runs:** Tests-page runs (selected or all) and the first heal run record per-test coverage, replacing

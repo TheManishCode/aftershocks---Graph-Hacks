@@ -170,7 +170,7 @@ function TurnView({ t, onRestore, canRestore }: { t: Turn; onRestore: () => void
             </TooltipContent>
           </Tooltip>
         )}
-        <p className="w-fit max-w-[85%] rounded-panel rounded-br-sm border border-line-strong bg-surface-raised px-3.5 py-2 text-body-sm text-ink-strong">
+        <p className="w-fit max-w-[85%] rounded-nested rounded-br-sm border border-line-strong bg-surface-raised px-3.5 py-2 text-body-sm text-ink-strong">
           {t.q}
         </p>
       </div>
@@ -392,7 +392,7 @@ export default function AskPage() {
       </div>
 
       <form
-        className="sticky bottom-4 mt-5 rounded-panel border border-line-strong bg-base/95 shadow-[var(--shadow-pop)] backdrop-blur-xl"
+        className="sticky bottom-4 mt-5 rounded-nested border border-line-strong bg-base/95 shadow-[var(--shadow-pop)] backdrop-blur-xl"
         onSubmit={(e) => {
           e.preventDefault();
           ask(q);

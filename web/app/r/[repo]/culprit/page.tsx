@@ -186,14 +186,14 @@ function RunView({ repo, id, history }: { repo: string; id: string; history: Que
                       <li
                         key={f.nodeid}
                         className={cn(
-                          "rounded-panel border border-transparent",
+                          "rounded-nested border border-transparent",
                           isOpen && "border-line bg-surface-raised",
                         )}
                       >
                         <button
                           type="button"
                           onClick={() => setFailOpen(isOpen ? null : f.nodeid)}
-                          className="flex w-full items-center gap-2 rounded-panel px-2 py-1.5 text-left hover:bg-accent"
+                          className="flex w-full items-center gap-2 rounded-nested px-2 py-1.5 text-left hover:bg-accent"
                           aria-expanded={isOpen}
                         >
                           <Chevron className="size-3.5 shrink-0 text-ink-faint" aria-hidden />
@@ -335,7 +335,7 @@ function RunView({ repo, id, history }: { repo: string; id: string; history: Que
 function RunSummary({ repo, d }: { repo: string; d: RunDetail }) {
   const runHref = (x: string) => `/r/${encodeURIComponent(repo)}/culprit?run=${x}`;
   return (
-    <div className="as-in rounded-panel border border-line bg-surface-raised p-4">
+    <div className="as-in rounded-nested border border-line bg-surface-raised p-4">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-3">
         <Metric size="sm" label="Failed" value={num(d.failed)} tone={d.failed ? "text-fail" : undefined} />
         <Metric size="sm" label="Passed" value={num(d.passed)} tone="text-pass" />
@@ -519,7 +519,7 @@ function Verdict({ repo, r, last }: { repo: string; r: HealDone; last: string | 
   return (
     <div
       className={cn(
-        "mt-3 rounded-panel border p-3 text-body-sm",
+        "mt-3 rounded-nested border p-3 text-body-sm",
         good ? "border-pass/30 bg-pass/[0.06]" : "border-line bg-surface-raised",
       )}
     >

@@ -135,7 +135,7 @@ export default function CypherPage() {
                   <button
                     type="button"
                     className={cn(
-                      "w-full rounded-[6px] px-2 py-1.5 text-left text-caption transition-colors hover:bg-accent",
+                      "w-full rounded-inner px-2 py-1.5 text-left text-caption transition-colors hover:bg-accent",
                       query === e.query ? "text-ink-strong" : "text-ink-muted",
                     )}
                     aria-pressed={query === e.query}

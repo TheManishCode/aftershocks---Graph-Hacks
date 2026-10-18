@@ -131,7 +131,7 @@ export default function DiffPage() {
                         <li key={`${s.id}:${s.change}`} className="flex items-start gap-2 px-2 py-1">
                           <Mono
                             className={cn(
-                              "w-[68px] shrink-0 rounded-[6px] px-1.5 py-0.5 text-center text-micro",
+                              "w-[68px] shrink-0 rounded-inner px-1.5 py-0.5 text-center text-micro",
                               CHANGE_TONE[s.change],
                             )}
                           >

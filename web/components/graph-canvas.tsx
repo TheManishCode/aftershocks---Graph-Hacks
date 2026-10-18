@@ -51,7 +51,7 @@ const Card = memo(function Card({ data }: NodeProps<Node<Data>>) {
   return (
     <div
       className={cn(
-        "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-panel border bg-surface-overlay/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
+        "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-nested border bg-surface-overlay/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
         data.emphasis ? "border-brand/60 shadow-[0_0_0_1px_var(--color-brand),0_0_24px_-6px_var(--color-brand)]" : "border-line hover:border-line-loud",
         data.selected && "border-brand ring-2 ring-brand/50 ring-offset-2 ring-offset-ground",
       )}
@@ -125,7 +125,7 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
   );
 
   return (
-    <div className="relative overflow-hidden rounded-panel border border-line bg-ground" style={{ height }}>
+    <div className="relative overflow-hidden rounded-nested border border-line bg-ground" style={{ height }}>
       {rfNodes.length === 0 && nodes.length > 0 && <div className="absolute inset-0 grid place-items-center text-body-sm text-ink-muted">Laying out…</div>}
       <ReactFlow
         nodes={rfNodes}

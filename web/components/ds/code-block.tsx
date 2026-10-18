@@ -90,7 +90,7 @@ export function CodeBlock({
   const text = code ?? "";
   const showHeader = Boolean(title || action || !noCopy);
   return (
-    <div className={cn("overflow-hidden rounded-panel border border-line bg-ground/60", className)} {...rest}>
+    <div className={cn("overflow-hidden rounded-nested border border-line bg-ground/60", className)} {...rest}>
       {showHeader && (
         <div className="flex items-center gap-2 border-b border-line bg-surface/60 px-2.5 py-1.5">
           {title && <span className="min-w-0 truncate font-mono text-micro uppercase text-ink-muted">{title}</span>}

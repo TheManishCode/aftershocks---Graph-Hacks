@@ -102,7 +102,7 @@ fourth parallel way of running tests:
 
 - Reuses `runtime.pytest_run.run_selected` to run the already-selected tests for real, and `tools.culprits` (so
   `--changed` refs get the same `lookup.find` resolution `run` gives them) to rank suspects on failure.
-- `--apply` sends the top suspect's whole file plus the failing output to Claude (`claude-opus-5-5`, same model Ask
+- `--apply` sends the top suspect's whole file plus the failing output to Claude (`claude-opus-5`, same model Ask
   uses), writes the proposed file back, and re-runs the same tests to check. A round is kept only if the failing set
   strictly shrank; otherwise the file is restored from the copy read before the edit and the next suspect is tried.
 - CLI command: `aftershock heal`. Dry-run (no `--apply` or no `ANTHROPIC_API_KEY`) never calls Claude or writes.

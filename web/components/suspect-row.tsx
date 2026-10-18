@@ -35,11 +35,11 @@ export function SuspectRow({
 }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <li className={cn("rounded-panel border border-transparent", open && "border-line bg-surface-raised")}>
+    <li className={cn("rounded-nested border border-transparent", open && "border-line bg-surface-raised")}>
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 rounded-panel px-2 py-2 text-left hover:bg-accent"
+        className="flex w-full items-center gap-3 rounded-nested px-2 py-2 text-left hover:bg-accent"
         aria-expanded={open}
       >
         <Chevron className="size-3.5 shrink-0 text-ink-faint" aria-hidden />

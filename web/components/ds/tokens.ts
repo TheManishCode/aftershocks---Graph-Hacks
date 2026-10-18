@@ -17,6 +17,9 @@ export type ColorToken =
   | "surface"
   | "surface-raised"
   | "surface-overlay"
+  | "invert"
+  | "invert-strong"
+  | "invert-ink"
   | "line"
   | "line-strong"
   | "line-loud"
@@ -44,35 +47,38 @@ export type ColorToken =
 
 /** SSR / test fallbacks. Kept in sync with the tier-1 palette in globals.css. */
 const FALLBACK: Record<ColorToken, string> = {
-  ground: "#070a08",
-  base: "#0b0e0c",
-  surface: "#111613",
-  "surface-raised": "#171f1a",
-  "surface-overlay": "#1e2822",
-  line: "#243029",
-  "line-strong": "#2e3c34",
-  "line-loud": "#3c4d43",
-  ink: "#c6d1ca",
-  "ink-strong": "#f4f8f5",
-  "ink-muted": "#93a199",
-  "ink-faint": "#45514b",
-  brand: "#9b87ff",
-  "brand-solid": "#7c5cff",
-  "sev-none": "#93a199",
-  "sev-low": "#8be06e",
-  "sev-medium": "#e8b339",
-  "sev-high": "#ff5a1f",
-  "sev-critical": "#ff4747",
-  pass: "#8be06e",
-  fail: "#ff4747",
-  warn: "#e8b339",
-  info: "#22c9db",
-  "data-1": "#9b87ff",
-  "data-2": "#22c9db",
-  "data-3": "#e8b339",
-  "data-4": "#52b6ff",
-  "data-5": "#e879c7",
-  "data-6": "#8be06e",
+  ground: "#000000",
+  base: "#09090b",
+  surface: "#0e0e11",
+  "surface-raised": "#18181b",
+  "surface-overlay": "#1f1f23",
+  invert: "#e5e5e5",
+  "invert-strong": "#ffffff",
+  "invert-ink": "#000000",
+  line: "#27272a",
+  "line-strong": "#3f3f46",
+  "line-loud": "#52525b",
+  ink: "#d4d4d8",
+  "ink-strong": "#ffffff",
+  "ink-muted": "#a1a1aa",
+  "ink-faint": "#71717a",
+  brand: "#ffffff",
+  "brand-solid": "#e5e5e5",
+  "sev-none": "#a1a1aa",
+  "sev-low": "#a3e635",
+  "sev-medium": "#fbbf24",
+  "sev-high": "#f97316",
+  "sev-critical": "#ef4444",
+  pass: "#a3e635",
+  fail: "#f87171",
+  warn: "#fbbf24",
+  info: "#22d3ee",
+  "data-1": "#e5e5e5",
+  "data-2": "#22d3ee",
+  "data-3": "#fbbf24",
+  "data-4": "#38bdf8",
+  "data-5": "#e879f9",
+  "data-6": "#a3e635",
 };
 
 const cache = new Map<ColorToken, string>();
@@ -100,9 +106,9 @@ export const DATA_SERIES: ColorToken[] = ["data-1", "data-2", "data-3", "data-4"
 export const SEVERITY_SCALE = ["sev-none", "sev-low", "sev-medium", "sev-high", "sev-critical"] as const;
 
 export const MOTION = {
-  fast: 120,
-  base: 220,
-  slow: 420,
+  fast: 140,
+  base: 260,
+  slow: 560,
   easeOut: "cubic-bezier(0.22, 1, 0.36, 1)",
   easeInOut: "cubic-bezier(0.76, 0, 0.24, 1)",
 } as const;

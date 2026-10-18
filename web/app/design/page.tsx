@@ -127,7 +127,7 @@ export default function DesignPage() {
           </Grid>
 
           <Grid cols={2} className="mt-[var(--stack-gap)]">
-            <Panel tone="brand" title="Brand — chrome" note="violet. primary action, active nav, links, focus, selection.">
+            <Panel tone="emphasis" title="Chrome — achromatic" note="white, #E5E5E5, black. primary action, active nav, links, focus, selection.">
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm">Primary</Button>
                 <Button size="sm" variant="outline">
@@ -137,11 +137,12 @@ export default function DesignPage() {
                   Ghost
                 </Button>
                 <Chip tone="brand" dot>
-                  brand
+                  chrome
                 </Chip>
               </div>
               <p className="mt-3 text-body-sm text-ink-muted">
-                The accent is deliberately cool. In a blast-radius tool the warm ramp belongs to the data, so chrome cannot borrow it.
+                The chrome has no hue at all, which is stronger than choosing a cool one: in a blast-radius tool every colour on screen
+                belongs to the data, so there is nothing left for the application to borrow or for a reader to misread.
               </p>
             </Panel>
             <Panel title="Severity — data" note="the thermal ramp. nothing else in the product is orange or red.">
@@ -161,7 +162,10 @@ export default function DesignPage() {
           </Grid>
         </Slab>
 
-        <Slab title="Typography" description="Barlow Condensed for display and readouts, Inter for UI and prose, JetBrains Mono for anything a machine produced.">
+        <Slab
+          title="Typography"
+          description="Two faces. JetBrains Mono is the default, because almost every string here is a path, an id or a count; Inter marks the few places a person is speaking."
+        >
           <Panel>
             <ul className="space-y-3">
               {TYPE.map(([name, cls, sample]) => (
@@ -192,12 +196,29 @@ export default function DesignPage() {
             </Panel>
             <Bento>
               <div className="text-body text-ink-strong">Bento</div>
-              <div className="mt-1 text-body-sm text-ink-muted">18px radius, hover lift. For choosing where to go, not for reading.</div>
+              <div className="mt-1 text-body-sm text-ink-muted">
+                Card radius, hover lift. For choosing where to go, not for reading.
+              </div>
             </Bento>
             <Panel tone="recessed" title="Recessed">
               <p className="text-body-sm text-ink-muted">For inputs and read-only output wells.</p>
             </Panel>
           </Grid>
+          {/* The focal tone is shown on its own row, at full width, because that
+              is the only way it is ever correct to use: one inverted object per
+              viewport. Three of them side by side in the grid above would teach
+              the opposite of the rule. */}
+          <Panel
+            tone="focal"
+            title="Focal"
+            note="the inverted surface — one per viewport, and never for something you only read"
+            className="mt-[var(--stack-gap)]"
+          >
+            <p className="text-body-sm">
+              A #E5E5E5 fill carrying black ink. It is the loudest move in the language and it has no hue, so it can sit beside the
+              severity ramp without competing with it. If a second one appears on the same screen, neither is focal any more.
+            </p>
+          </Panel>
           <Toolbar className="mt-[var(--stack-gap)]">
             <Eyebrow>Toolbar</Eyebrow>
             <ToolbarSep />

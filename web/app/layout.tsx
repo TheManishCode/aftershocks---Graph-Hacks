@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow_Condensed, Instrument_Serif, Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
@@ -9,27 +9,25 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 /**
- * Four faces, each with exactly one job (see DESIGN.md §Typography):
- *   Barlow Condensed → display. Headings and big metric readouts. Condensed buys
- *                      ~20% more characters per line, which is what lets a fully
- *                      qualified symbol name sit in a page title without truncating.
- *   Inter            → UI and prose.
- *   JetBrains Mono   → code, ids, paths, numbers, technical labels.
- *   Instrument Serif → the landing page's editorial lines only. Never in the app.
+ * Two faces, which is the whole typographic system (see DESIGN.md §Typography):
+ *
+ *   Inter          → display only. Hero, section titles, large metric readouts.
+ *   JetBrains Mono → everything else, including body prose.
+ *
+ * The split is inverted from the usual arrangement on purpose, and it carries
+ * meaning rather than style: in Aftershock almost every string on screen is a
+ * path, a symbol id, a count or a duration, so the machine face is the default
+ * and Inter marks the handful of places a person is speaking. A reader can tell
+ * the product's words from the graph's output without reading either.
+ *
+ * Inter is loaded at 500 only — the display weight the source specifies — so
+ * there is no way to reach for 700 and break the "weights stop at 600" rule.
  */
-const sans = Inter({ variable: "--font-ui-sans", subsets: ["latin"], display: "swap" });
 const mono = JetBrains_Mono({ variable: "--font-ui-mono", subsets: ["latin"], display: "swap" });
-const display = Barlow_Condensed({
+const display = Inter({
   variable: "--font-ui-display",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
-  display: "swap",
-});
-const editorial = Instrument_Serif({
-  variable: "--font-ui-editorial",
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
   display: "swap",
 });
 
@@ -40,7 +38,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070a08",
+  themeColor: "#000000",
   colorScheme: "dark",
 };
 
@@ -48,18 +46,26 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="en"
-      className={`dark ${sans.variable} ${mono.variable} ${display.variable} ${editorial.variable}`}
+      className={`dark ${mono.variable} ${display.variable}`}
       /* Runtime switches live on <html> so CSS alone can respond to them; the
          preference reader in components/shell/preferences.tsx only writes here. */
       data-density="comfortable"
       suppressHydrationWarning
     >
-      <body className="min-h-screen font-sans antialiased">
-        {/* Applies the persisted theme/density/motion before first paint, so the
-            shell never flashes the default skin. Must stay inline and tiny. */}
+      <body className="min-h-screen bg-ground font-mono antialiased">
+        {/* Applies the persisted density/motion before first paint, so the shell
+            never flashes the default skin. Must stay inline and tiny.
+
+            It also sets `data-anim="on"`, which is what licenses every
+            `opacity: 0` entrance state in globals.css. That assignment is
+            deliberately outside the try/catch and first: a thrown
+            localStorage (private mode, blocked storage) must not be able to
+            leave the document in a state where the animations are armed but
+            the attribute saying "scripting works" is missing — the page would
+            render blank. Set the gate, then read preferences. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var p=JSON.parse(localStorage.getItem("as:prefs")||"{}");var r=document.documentElement;if(p.theme==="light"){r.setAttribute("data-theme","light");r.classList.remove("dark")}if(p.density)r.setAttribute("data-density",p.density);if(p.motion)r.setAttribute("data-motion",p.motion)}catch(e){}`,
+            __html: `var r=document.documentElement;r.setAttribute("data-anim","on");try{var p=JSON.parse(localStorage.getItem("as:prefs")||"{}");if(p.theme==="light"){r.setAttribute("data-theme","light");r.classList.remove("dark")}if(p.density)r.setAttribute("data-density",p.density);if(p.motion)r.setAttribute("data-motion",p.motion)}catch(e){}`,
           }}
         />
         <TooltipProvider delayDuration={200}>

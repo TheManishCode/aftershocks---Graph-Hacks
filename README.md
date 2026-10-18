@@ -97,7 +97,7 @@ can drive the whole loop when it launches the server itself with run access:
 **`aftershock heal myrepo --diff --apply`** is `run` plus a fix attempt: for a failure, it asks Claude to rewrite the top culprit's whole file, then re-runs the same tests for real to check. A round is kept only if it strictly reduces the number of failing tests; otherwise it is reverted and the next suspect is tried, up to `--max-rounds` (default 3). Without `--apply` (or without `ANTHROPIC_API_KEY`), it only reports, like `run` — this is the "AI reads the code, selects tests, runs them, and tries to resolve failures" ask from the track brief, built on the same coverage-aware test selection and Ochiai culprit ranking as the rest of Aftershock, rather than as a separate bolt-on.
 
 **Ask** routes common question shapes to the right tool deterministically. With `ANTHROPIC_API_KEY` set, free-form
-questions go to Claude (`claude-opus-5-5`), which calls the same tools as the MCP server in a bounded loop (8 turns) and
+questions go to Claude (`claude-opus-5`), which calls the same tools as the MCP server in a bounded loop (8 turns) and
 answers from the graph evidence. The request enables Anthropic's server-side fallbacks: if the primary model declines,
 the API may retry on a fallback model. API errors fall back to the router.
 
