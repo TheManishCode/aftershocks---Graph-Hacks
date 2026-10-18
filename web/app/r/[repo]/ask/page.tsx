@@ -18,6 +18,7 @@
  */
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EFFORTS, ModelPicker } from "@/components/ask/model-picker";
@@ -217,7 +218,10 @@ function TurnView({ t, i, onRestore, canRestore }: { t: Turn; i: number; onResto
 
 export default function AskPage() {
   const repo = useRepo();
-  const [q, setQ] = useState("");
+  // `?q=` prefills the box (the Tests page links here to have the agent pick scripts). It is never sent on load:
+  // asking costs model tokens, so the user presses Send.
+  const prefill = useSearchParams().get("q") ?? "";
+  const [q, setQ] = useState(prefill.slice(0, 2000));
   const [turns, setTurns] = useState<Turn[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [effort, setEffort] = useState<Effort>("medium");

@@ -172,6 +172,39 @@ def test_libraries(repo: Repo) -> dict:
 
 
 @_tool()
+def test_scripts(
+    repo: Repo,
+    query: Annotated[str | None, Field(description="Words to match in id, name, summary or tags, e.g. 'secrets'")] = None,
+    category: Annotated[str | None, Field(description="tests, lint, types, security, deps, build, hygiene, config "
+                                                      "or graph")] = None,
+    applicable_only: Annotated[bool, Field(description="Only scripts whose files exist in this repo")] = True,
+) -> dict:
+    """The built-in script library: checks, graph questions and tool runs (pytest, ruff, tsc, go vet, npm test,
+    ...) that apply to this repo. `kind=check|graph` scripts are read-only and can be run with `run_checks`;
+    `kind=command` scripts execute code and only run when the user starts them, or when command runs are enabled."""
+    from . import catalog
+
+    res = catalog.listing(repo, q=query, category=category, applicable_only=applicable_only)
+    lines = [f"{r['id']} | {r['kind']}{'' if r['available'] is not False else ' (tool not installed)'} | "
+             f"{r['category']} | {r['name']}: {r['summary']}" for r in res["scripts"]]
+    return {"count": len(lines), "applicable": res["applicable"], "total": res["total"],
+            "catalog": "\n".join(lines) or "no scripts match"}
+
+
+@_tool()
+def run_checks(
+    repo: Repo,
+    ids: Annotated[list[str], Field(description="Script ids from `test_scripts` with kind check or graph",
+                                    min_length=1, max_length=40)],
+) -> dict:
+    """Run read-only scripts from the library (kind check or graph) and return each one's status and findings.
+    They read files and the graph only; nothing in the repo is executed."""
+    from . import catalog
+
+    return catalog.brief(catalog.run(repo, ids, allow_exec=False))
+
+
+@_tool()
 def overview(repo: Repo) -> dict:
     """Architecture at a glance: subsystems (import communities), dependency cycles, hotspots (churn x complexity),
     load-bearing symbols (PageRank, betweenness) and dead-code candidates."""
@@ -199,7 +232,7 @@ def cypher(repo: Repo, query: Annotated[str, Field(description="Read-only openCy
 
 
 def register_actions() -> None:
-    """The two tools that execute code (D26). Called only by `main` for a stdio server with AFTERSHOCK_ALLOW_RUN."""
+    """The tools that execute code (D26, D28). Called only by `main` for a stdio server with AFTERSHOCK_ALLOW_RUN."""
     from .runtime import jobs
     from .runtime.pytest_run import RuntimeErrorReport
 
@@ -224,6 +257,18 @@ def register_actions() -> None:
         when it has `coverage`). Records the run in the graph and returns its `run_id`, counts and, when tests fail,
         the culprit ranking. Open it with `run_detail`; fix it with `heal`."""
         return act(jobs.run_tests, repo, mode, quiet, targets=targets)
+
+    @_tool(RUNS)
+    def run_scripts(
+        repo: Repo,
+        ids: Annotated[list[str], Field(description="Script ids from `test_scripts`, any kind", min_length=1,
+                                        max_length=40)],
+    ) -> dict:
+        """Run scripts from the built-in library, including `command` ones that execute tools and tests in the
+        repo (pytest, ruff, tsc, npm test, ...). Tools are never installed: a missing one is reported as skipped."""
+        from . import catalog
+
+        return catalog.brief(act(catalog.run, repo, ids, allow_exec=True))
 
     @_tool(EDITS)
     def heal(repo: Repo, run_id: Annotated[str, Field(description="A recorded run with failing tests")],

@@ -73,15 +73,19 @@ const scroll = async (dy, hold = 1800) => {
 await go("/", "Aftershock", "What breaks if I change this? Code is parsed into a FalkorDB graph; every answer shows its evidence.", 4500);
 await scroll(700);
 
-// 2 — register an external test library
-await go(`/r/${REPO}/tests`, "1 · Register a test library", "The finance team's compliance tests live outside the repo. Register them so impact analysis can see them.", 2500);
-await page.getByRole("button", { name: "Add", exact: true }).click();
-await wait(600);
-await page.locator("#lib-name").pressSequentially("compliance", { delay: 60 });
-await page.locator("#lib-path").pressSequentially(LIB, { delay: 25 });
-await wait(600);
-await page.getByRole("button", { name: /Register/ }).click();
-await page.getByText(/12 tests/).first().waitFor({ timeout: 30000 }).catch(() => {});
+// 2 — the external compliance suite is registered through the API (an operator step; the page lists it), then the
+// built-in script library runs its read-only checks
+const reg = await fetch(`${API}/repos/${REPO}/libraries`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ name: "compliance", path: LIB }),
+});
+if (!reg.ok) throw new Error(`registering the compliance library failed: ${reg.status} ${await reg.text()}`);
+await go(`/r/${REPO}/tests`, "1 · Tests and checks", "The compliance suite outside the repo is registered; the built-in script library checks the repo.", 2500);
+await page.getByText("B · Script library").scrollIntoViewIfNeeded();
+await wait(800);
+await page.getByRole("button", { name: "Run all quick checks" }).click();
+await page.getByText(/^Passed$/).first().waitFor({ timeout: 30000 }).catch(() => {});
 await wait(3000);
 
 // 4 — overview

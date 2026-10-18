@@ -532,6 +532,12 @@ export const api = {
   libraryRemove: (repo: string, name: string) =>
     request<LibraryResult>("DELETE", `${r(repo)}/libraries/${encodeURIComponent(name)}`),
 
+  /* ---- built-in script library (D28) -------------------------------------- */
+
+  /** The catalog for this repo. `can_exec` is the run gate: without it only check/graph scripts run. */
+  scripts: (repo: string, p: { q?: string; category?: string; ecosystem?: string; applicable?: boolean } = {}) =>
+    request<ScriptListing>("GET", `${r(repo)}/scripts${q({ ...p, applicable: p.applicable ? "true" : undefined })}`),
+
   /** Which tests a change selects — the same computation a run does, without executing anything. */
   selectTests: (repo: string, b: { targets?: string[]; rev?: string }) => request<RunSelected>("POST", `${r(repo)}/tests`, b),
 
@@ -592,9 +598,65 @@ export interface LibraryResult {
   note?: string;
 }
 
+export type ScriptKind = "check" | "graph" | "command";
+export type ScriptStatus = "passed" | "warned" | "failed" | "error" | "skipped";
+
+export interface Script {
+  id: string;
+  name: string;
+  category: string;
+  ecosystem: string;
+  summary: string;
+  kind: ScriptKind;
+  /** command scripts execute the repo's code or a tool, and sit behind the run gate */
+  executes: boolean;
+  tool: string | null;
+  severity: "error" | "warn" | "info";
+  tags: string[];
+  /** the files it looks at exist in this repo */
+  applies: boolean;
+  /** its tool is installed; null when that can't be told without running anything */
+  available: boolean | null;
+}
+
+export interface ScriptListing {
+  scripts: Script[];
+  total: number;
+  applicable: number;
+  categories: { id: string; label: string; applicable: number }[];
+  files_scanned: number;
+  can_exec: boolean;
+  exec_reason: string | null;
+}
+
+export interface ScriptFinding {
+  file: string;
+  line: number | null;
+  message: string;
+}
+
+export interface ScriptResult {
+  id: string;
+  name: string;
+  category: string;
+  kind: ScriptKind;
+  status: ScriptStatus;
+  count: number;
+  findings: ScriptFinding[];
+  seconds: number;
+  reason?: string;
+  exit_code?: number;
+  command?: string;
+  run_id?: string;
+  summary?: Record<string, number>;
+  output_tail?: string;
+}
+
 export const eventsUrl = (repo: string, after = 0) => `/api/v1${r(repo)}/events?after=${after}`;
 export const askStreamUrl = (repo: string) => `/api/v1${r(repo)}/ask/stream`;
 /** POST {@link RunRequest}; SSE frames: start, selected, test, progress, done, error, end (D18). */
 export const runStreamUrl = (repo: string) => `/api/v1${r(repo)}/run/stream`;
 /** POST {max_rounds?, timeout?}; SSE frames: start, run, ran, suspect, asking, round, done, error, end (D25). */
 export const healStreamUrl = (repo: string, id: string) => `/api/v1${r(repo)}/runs/${encodeURIComponent(id)}/heal/stream`;
+/** POST {ids, timeout?}; SSE frames: start, script, test, result, done, error, end (D28). */
+export const scriptsStreamUrl = (repo: string) => `/api/v1${r(repo)}/scripts/run/stream`;

@@ -35,7 +35,21 @@ Answer the user's question by calling tools, then write a short, direct answer.
   claim, with how each edge was resolved when it matters (e.g. "via import", "name-unique guess, low confidence").
 - Impact numbers are risk estimates over statically resolved edges, not proof. Say so once, briefly. Never invent
   callers, tests or files the tools did not return.
-- Prefer one or two well-chosen tool calls over many. Stop when you can answer."""
+- Prefer one or two well-chosen tool calls over many. Stop when you can answer.
+- To check or test the repo, pick from the built-in script library: `test_scripts` lists what applies, `run_checks`
+  runs the read-only ones (kind check/graph). Choose the few that fit the question rather than everything.
+  `kind=command` scripts (pytest, linters, type checkers, npm test, ...) run only through `run_scripts`; if you don't
+  have that tool, name the ids and tell the user to run them from the Tests page."""
+
+RUN_SCRIPTS = {
+    "name": "run_scripts",
+    "description": "Run scripts from the built-in library, including kind=command ones that execute tools and tests "
+                   "in the repo (pytest, ruff, tsc, npm test, ...). Slow: pick only what the question needs. "
+                   "Tools are never installed; a missing one comes back as skipped.",
+    "input_schema": {"type": "object", "properties": {"ids": {
+        "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10,
+        "description": "Script ids from test_scripts"}}, "required": ["ids"]},
+}
 
 
 # ---- tool plumbing ---------------------------------------------------------------------------------------------------
@@ -67,6 +81,21 @@ def tool_specs() -> list[dict]:
     return _TOOLS
 
 
+def _with_runs(run_scripts):
+    """Tool specs and dispatcher, with `run_scripts` added only when the API handed us a gated runner (D28)."""
+    specs = tool_specs() + ([RUN_SCRIPTS] if run_scripts else [])
+
+    def dispatch(repo: str, name: str, args: dict) -> dict:
+        if name == "run_scripts" and run_scripts:
+            ids = args.get("ids")
+            if not isinstance(ids, list) or not ids or len(ids) > 10:
+                raise T.ToolError("ids: a list of 1 to 10 script ids")
+            return run_scripts([str(i) for i in ids])
+        return call_tool(repo, name, args)
+
+    return specs, dispatch
+
+
 def call_tool(repo: str, name: str, args: dict) -> dict:
     fn = getattr(M, name, None)
     if fn is None or name not in {s["name"] for s in tool_specs()}:
@@ -78,8 +107,10 @@ def call_tool(repo: str, name: str, args: dict) -> dict:
 
 
 def _ask_claude(repo: str, question: str, emit: Emit, *, api_key: str | None = None, model: str | None = None,
-                effort: str = "medium") -> dict:
+                effort: str = "medium", run_scripts=None) -> dict:
     import anthropic
+
+    specs, dispatch = _with_runs(run_scripts)
 
     s = get_settings()
     client = anthropic.Anthropic(api_key=api_key or s.anthropic_api_key)
@@ -88,7 +119,7 @@ def _ask_claude(repo: str, question: str, emit: Emit, *, api_key: str | None = N
     steps, usage = [], {"input": 0, "output": 0, "cache_read": 0}
     for _ in range(MAX_TURNS):
         resp = client.beta.messages.create(
-            model=model, max_tokens=16000, system=SYSTEM, tools=tool_specs(), messages=messages,
+            model=model, max_tokens=16000, system=SYSTEM, tools=specs, messages=messages,
             cache_control={"type": "ephemeral"}, output_config={"effort": effort},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",
         )
@@ -110,7 +141,7 @@ def _ask_claude(repo: str, question: str, emit: Emit, *, api_key: str | None = N
         for b in uses:
             emit("tool", {"name": b.name, "input": b.input})
             try:
-                out = call_tool(repo, b.name, dict(b.input))
+                out = dispatch(repo, b.name, dict(b.input))
                 content, err = json.dumps(out, default=str), False
                 summary = _summary(b.name, out)
             except (T.ToolError, GraphUnavailable, M.MCPToolError) as e:
@@ -134,6 +165,11 @@ def _summary(name: str, out: dict) -> str:
         return imp.get("error") or "no changes"
     if name == "explain_path":
         return out.get("summary") or out.get("error", "")
+    if name in ("run_checks", "run_scripts"):
+        parts = [f"{out[k]} {k}" for k in ("passed", "warned", "failed", "error", "skipped") if out.get(k)]
+        return ", ".join(parts) or "nothing ran"
+    if name == "test_scripts":
+        return f"{out.get('count', 0)} scripts"
     for k in ("symbols", "tests", "suspects", "candidates", "rows", "callers", "hotspots", "owners"):
         if isinstance(out.get(k), list):
             return f"{len(out[k])} {k}"
@@ -365,12 +401,15 @@ def _render_symbol(out: dict) -> str:
 
 
 def ask(repo: str, question: str, emit: Emit | None = None, *, model: str | None = None,
-        effort: str = "medium") -> dict:
+        effort: str = "medium", run_scripts=None) -> dict:
     """Answer `question` about `repo`.
 
     `model` is a provider-qualified id (`"openrouter:anthropic/claude-sonnet-5"`); when it names a provider with
     no key, or is omitted, the server's own default is used. Any model failure degrades to the deterministic
     router rather than failing the request — an answer from one tool beats an error page.
+
+    `run_scripts(ids)`, when given, lets the model run `command` scripts too. Only the API passes it, and only for
+    a request that passed the run gate (`run_refusal`); the router never runs anything.
     """
     from . import providers
 
@@ -387,11 +426,13 @@ def ask(repo: str, question: str, emit: Emit | None = None, *, model: str | None
     try:
         key = providers.key_for(provider.id)
         if provider.wire == "anthropic":
-            return _ask_claude(repo, question, emit, api_key=key, model=name, effort=effort)
+            return _ask_claude(repo, question, emit, api_key=key, model=name, effort=effort,
+                               run_scripts=run_scripts)
         from . import agent_openai
 
+        specs, dispatch = _with_runs(run_scripts)
         return agent_openai.ask(repo, question, emit, provider=provider, key=key, model=name, system=SYSTEM,
-                                specs=tool_specs(), call_tool=call_tool, summarise=_summary, effort=effort,
+                                specs=specs, call_tool=dispatch, summarise=_summary, effort=effort,
                                 max_turns=MAX_TURNS)
     except Exception as e:  # noqa: BLE001 -- outage, bad key, unknown model: degrade to the router, don't fail
         log.warning("model mode failed (%s), falling back to router: %s", full, e)

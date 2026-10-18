@@ -452,18 +452,32 @@ async def heal_stream(repo: str, run_id: str, body: HealBody, request: Request):
         repo, run_id, emit, max_rounds=body.max_rounds, timeout=body.timeout), stop_on_leave=False)
 
 
-def _job_stream(repo: str, request: Request, what: str, job, *, stop_on_leave: bool = True) -> StreamingResponse:
-    """Run `job(emit, cancel)` on a thread, one per repo, and stream what it emits as SSE, ending with `end`."""
-    if why := run_refusal(request):
+def _claim(repo: str, cancel: threading.Event) -> tuple[int, str] | None:
+    """Take the repo's run slot, or return (status, why not). Runs, heals and command scripts share it."""
+    with _lock:
+        if repo in _runs:
+            return 409, f"a test run for {repo} is already in progress"
+        if len(_runs) >= MAX_RUNS:
+            return 429, "too many test runs in progress; try again shortly"
+        _runs[repo] = cancel
+    return None
+
+
+def _release(repo: str) -> None:
+    with _lock:
+        _runs.pop(repo, None)
+
+
+def _job_stream(repo: str, request: Request, what: str, job, *, stop_on_leave: bool = True,
+                gated: bool = True) -> StreamingResponse:
+    """Run `job(emit, cancel)` on a thread, one per repo, and stream what it emits as SSE, ending with `end`.
+    `gated=False` is only for jobs that execute nothing (read-only scripts); they still take the slot."""
+    if gated and (why := run_refusal(request)):
         raise HTTPException(403, why)
     T._graph(repo)
     cancel = threading.Event()
-    with _lock:
-        if repo in _runs:
-            raise HTTPException(409, f"a test run for {repo} is already in progress")
-        if len(_runs) >= MAX_RUNS:
-            raise HTTPException(429, "too many test runs in progress; try again shortly", headers={"Retry-After": "10"})
-        _runs[repo] = cancel
+    if busy := _claim(repo, cancel):
+        raise HTTPException(*busy, headers={"Retry-After": "10"} if busy[0] == 429 else None)
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
@@ -484,8 +498,7 @@ def _job_stream(repo: str, request: Request, what: str, job, *, stop_on_leave: b
                 log.exception("%s failed", what)
                 emit("error", {"detail": f"the {what} failed; see server log"})
         finally:
-            with _lock:
-                _runs.pop(repo, None)
+            _release(repo)
             emit("end", {})
 
     threading.Thread(target=work, name=f"{what}-{repo}", daemon=True).start()
@@ -546,6 +559,69 @@ async def library_add(repo: str, body: LibraryBody):
 @app.delete(f"{v1}/repos/{{repo}}/libraries/{{name}}", dependencies=auth)
 async def library_remove(repo: str, name: str):
     return await call(T.library_set, repo, name, None)
+
+
+# ---- built-in script library (D28) --------------------------------------------------------------------------------
+
+
+@app.get(f"{v1}/repos/{{repo}}/scripts", dependencies=auth)
+async def scripts_list(repo: str, request: Request, q: str | None = Query(None, max_length=200),
+                       category: str | None = Query(None, max_length=40),
+                       ecosystem: str | None = Query(None, max_length=40), applicable: bool = False):
+    """The catalog: every built-in script, whether it applies to this repo, and whether its tool is installed.
+    `can_exec` says whether this caller may run `command` scripts (the same gate as running tests)."""
+    from . import catalog
+
+    out = await call(catalog.listing, repo, q=q, category=category, ecosystem=ecosystem, applicable_only=applicable)
+    why = run_refusal(request)
+    return {**out, "can_exec": why is None, "exec_reason": why}
+
+
+class ScriptsBody(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=60)
+    timeout: int = Field(900, ge=10, le=7200)
+
+
+@app.post(f"{v1}/repos/{{repo}}/scripts/run/stream", dependencies=auth)
+async def scripts_run_stream(repo: str, body: ScriptsBody, request: Request):
+    """Run picked scripts, streaming start, script, output, result, done. Read-only picks (`check`, `graph`) run
+    for anyone with the API key; a pick that includes a `command` script needs the run gate (D18), like tests."""
+    from . import catalog
+
+    catalog.scripts()  # loads the registry
+    # As on heal, the gate comes before id validation: a refused caller learns nothing from a bad id but a 403.
+    if (why := run_refusal(request)) and any(
+            (s := catalog.REGISTRY.get(i)) is None or s.executes for i in body.ids):
+        raise HTTPException(403, why)
+    try:
+        chosen = catalog.pick(body.ids, allow_exec=True)
+    except T.NotFound as e:
+        raise HTTPException(404, str(e)) from e
+    except T.ToolError as e:
+        raise HTTPException(400, str(e)) from e
+    executes = any(s.executes for s in chosen)
+    return _job_stream(repo, request, "scripts", lambda emit, cancel: catalog.run(
+        repo, [s.id for s in chosen], emit, allow_exec=executes, cancel=cancel, timeout=body.timeout),
+        gated=executes)
+
+
+def _script_runner(repo: str, request: Request):
+    """For the Ask agent: run `command` scripts too, but only when this request passed the run gate. It shares the
+    repo's run slot with the Tests page, so the agent cannot start a second run under a running one."""
+    if run_refusal(request):
+        return None
+    from . import catalog
+
+    def run_scripts(ids: list[str]) -> dict:
+        cancel = threading.Event()
+        if busy := _claim(repo, cancel):
+            raise T.ToolError(busy[1])
+        try:
+            return catalog.brief(catalog.run(repo, ids, allow_exec=True, cancel=cancel, timeout=600))
+        finally:
+            _release(repo)
+
+    return run_scripts
 
 
 # ---- model providers (D27) ---------------------------------------------------------------------------------------
@@ -619,11 +695,12 @@ async def cypher(repo: str, body: CypherBody):
 
 
 @app.post(f"{v1}/repos/{{repo}}/ask", dependencies=auth)
-async def ask(repo: str, body: AskBody):
+async def ask(repo: str, body: AskBody, request: Request):
     from . import agent
 
     T._graph(repo)
-    return await run_in_threadpool(agent.ask, repo, body.question, None, model=body.model, effort=body.effort)
+    return await run_in_threadpool(agent.ask, repo, body.question, None, model=body.model, effort=body.effort,
+                                   run_scripts=_script_runner(repo, request))
 
 
 @app.post(f"{v1}/repos/{{repo}}/ask/stream", dependencies=auth)
@@ -632,6 +709,7 @@ async def ask_stream(repo: str, body: AskBody, request: Request):
     from . import agent
 
     T._graph(repo)
+    runs = _script_runner(repo, request)
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
@@ -640,7 +718,8 @@ async def ask_stream(repo: str, body: AskBody, request: Request):
 
     async def runner():
         try:
-            await run_in_threadpool(agent.ask, repo, body.question, emit, model=body.model, effort=body.effort)
+            await run_in_threadpool(agent.ask, repo, body.question, emit, model=body.model, effort=body.effort,
+                                    run_scripts=runs)
         except Exception:
             log.exception("ask failed")
             emit("error", {"detail": "the agent failed; see server log"})

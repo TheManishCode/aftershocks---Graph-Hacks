@@ -13,6 +13,8 @@
     aftershock heal myrepo --diff --apply            # run the selected tests; let Claude fix failures and reverify
     aftershock library myrepo add mylib ../my-tests  # index + select + run an external pytest library with the repo
     aftershock runs myrepo [RUN_ID]                  # recorded runs (every run/heal is stored in the graph)
+    aftershock scripts myrepo list --q secrets       # the built-in script library: what applies to this repo
+    aftershock scripts myrepo run                    # every applicable read-only check; name ids to run tools too
     aftershock serve                                 # REST + /mcp on :8100
     aftershock mcp                                   # stdio MCP server for Claude Code / Cursor
 
@@ -257,6 +259,41 @@ def cmd_library(a) -> int:
     _out(res, a.json, f"{a.action} {a.name}: " + (f"{lib['tests']} tests in {lib['files']} files indexed"
                                                  if lib else "removed from the index"))
     return 0
+
+
+def cmd_scripts(a) -> int:
+    """The built-in script library (D28). Like `run`, this runs as you: ids you name run, tools included.
+    With no ids, `run` takes every applicable read-only script (kind check/graph) and executes nothing."""
+    from . import catalog
+
+    if a.action == "list":
+        res = catalog.listing(a.repo, q=a.q, category=a.category, ecosystem=a.ecosystem,
+                              applicable_only=not a.all)
+        rows = [f"{r['id']:<34} {r['kind']:<7} {r['category']:<9} {r['name']}"
+                + ("" if r["available"] is not False else "  (tool not installed)") for r in res["scripts"]]
+        _out(res, a.json, "\n".join(rows) + f"\n\n{res['applicable']} apply here, {res['total']} in the library")
+        return 0
+    ids = a.ids or [r["id"] for r in catalog.listing(a.repo, q=a.q, category=a.category, ecosystem=a.ecosystem,
+                                                      applicable_only=True)["scripts"] if r["kind"] != "command"]
+    if not ids:
+        _out({"results": []}, a.json, "no read-only script applies; name ids to run (see `scripts REPO list`)")
+        return 0
+
+    def emit(kind: str, data: dict) -> None:
+        if kind == "result" and not a.json:
+            mark = {"passed": "✓", "warned": "!", "failed": "✗", "error": "✗", "skipped": "-"}[data["status"]]
+            summ = ", ".join(f"{v} {k}" for k, v in (data.get("summary") or {}).items())
+            extra = data.get("reason") or summ or (f"{data['count']} findings" if data.get("count") else "")
+            print(f"  {mark} {data['id']:<34} {data['status']:<8} {extra}", file=sys.stderr)
+            for f in (data.get("findings") or [])[:a.show]:
+                loc = f["file"] + (f":{f['line']}" if f.get("line") else "")
+                print(f"      {loc}: {f['message']}", file=sys.stderr)
+
+    res = catalog.run(a.repo, ids, emit, allow_exec=True, timeout=a.timeout)
+    _out(catalog.brief(res) if not a.json else res, a.json,
+         f"{res['passed']} passed, {res['warned']} warned, {res['failed']} failed, {res['error']} errors, "
+         f"{res['skipped']} skipped in {res['seconds']:.1f}s")
+    return 1 if res["failed"] or res["error"] else 0
 
 
 def cmd_runs(a) -> int:
@@ -611,6 +648,19 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("name", nargs="?")
     s.add_argument("path", nargs="?", help="the library's directory (add)")
     s.set_defaults(fn=cmd_library)
+
+    s = sub.add_parser("scripts", parents=[common],
+                       help="the built-in script library: list what applies, run checks, linters and test suites")
+    s.add_argument("repo")
+    s.add_argument("action", choices=("list", "run"))
+    s.add_argument("ids", nargs="*", help="script ids (run); none = every applicable read-only script")
+    s.add_argument("--q", help="filter by words in the id, name, summary or tags")
+    s.add_argument("--category")
+    s.add_argument("--ecosystem")
+    s.add_argument("--all", action="store_true", help="list scripts that don't apply here too")
+    s.add_argument("--show", type=int, default=5, help="findings to print per script")
+    s.add_argument("--timeout", type=int, default=900, help="seconds per command script")
+    s.set_defaults(fn=cmd_scripts)
 
     s = sub.add_parser("runs", parents=[common], help="recorded test runs, or one run's failures and suspects")
     s.add_argument("repo")

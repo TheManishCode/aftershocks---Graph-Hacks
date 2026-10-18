@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased (2026-10-18)
+## Unreleased (2026-10-19)
+
+### Added: a built-in script library (D28)
+
+Users no longer bring test scripts; Aftershock ships them. `aftershock/catalog/` defines 189 scripts in 9
+categories across 13 ecosystems, each with what it checks, when it applies to a checkout, and how it runs:
+
+- **93 `check` scripts** read files only (merge markers, committed secrets with masked output, invalid JSON/YAML/TOML,
+  duplicate or focused tests, `eval`/`shell=True`/weak hashes, bare `except`, mutable defaults, …).
+- **8 `graph` scripts** query the indexed graph (untested hubs and hotspots, import cycles, dead code, orphan tests,
+  hidden coupling).
+- **88 `command` scripts** run real tools when installed (pytest modes, ruff, mypy, bandit, eslint, tsc, cargo,
+  go vet, shellcheck, hadolint, gitleaks, …). They execute code, so they need the run gate.
+
+Surfaces:
+
+- **Tests page:** a searchable, filterable library with *Run all quick checks* and *Run N selected*; results
+  stream in with findings linked to files. The "add library" form is gone; registered outside libraries are still
+  listed and removable, and `aftershock library` still adds them.
+- **Ask:** the agent gets `test_scripts` and `run_checks` (read-only) always, and `run_scripts` (anything,
+  including commands) only when the request passed the run gate. A *Let AI pick* card on the Tests page opens Ask with
+  a prefilled prompt.
+- **API:** `GET /repos/{r}/scripts`, `POST /repos/{r}/scripts/run/stream` (SSE). **CLI:** `aftershock scripts list|run`.
+  **MCP:** `test_scripts`, `run_checks`; `run_scripts` on a stdio server with `AFTERSHOCK_ALLOW_RUN=1`.
+- Script runs share each repo's run slot with test runs (409 while one is running).
+
+Fixed during testing: the registry loaded only the first catalog module imported, so importing
+`aftershock.catalog.commands` before `scripts()` silently dropped the graph scripts.
 
 ### Changed: the web UI, rebuilt again in the GROUNDTRUTH design
 

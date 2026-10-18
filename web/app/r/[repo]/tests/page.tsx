@@ -10,9 +10,10 @@
  *  2. **Selection is separable from running.** `POST /repos/{repo}/tests` is
  *     pure graph work: "which tests would this change run?" without executing
  *     anything. It works with the gate off and is the first thing offered.
- *  3. **Test libraries are visible.** External pytest directories registered
- *     against the repo are listed, added and removed here, because this is
- *     where their absence shows up as "a repo with no tests".
+ *  3. **Nobody writes scripts here.** The built-in library (D28) ships the
+ *     checks, linters, type checkers and suites; you tick them or ask the
+ *     agent to pick. External test directories registered from the CLI/API
+ *     are listed and removable, not added, on this page.
  */
 
 import Link from "next/link";
@@ -21,9 +22,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Callout, Chip, Cols, CodeBlock, Empty, ErrorNote, Figure, Head, Label, Measuring, Mono, Page, Seg, Sheet, Skeleton, Stack } from "@/components/gt";
-import { ArrowRight, Bot, ChevronRight, CircleAlert, CircleCheck, Crosshair, Library, Loader2, Play, Plus, Prohibit, Stop, Terminal, TestTube, Trash } from "@/components/icons";
+import { ArrowRight, Bot, ChevronRight, CircleAlert, CircleCheck, Crosshair, Library, Loader2, Play, Prohibit, Stop, Terminal, TestTube, Trash } from "@/components/icons";
 import { FileLink, Receipts, SymLink } from "@/components/kit";
 import { RunList } from "@/components/run-list";
+import { ScriptLibrary } from "@/components/script-library";
 import { SuspectRow } from "@/components/suspect-row";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
@@ -83,31 +85,34 @@ function RunGate({ repo, reason }: { repo: string; reason: string | null }) {
   );
 }
 
+/** What the agent can do with the script library, and one click into it. Asking is never automatic: it costs tokens. */
+function AskToPick({ repo, canExec }: { repo: string; canExec: boolean }) {
+  const prompt = "Pick the built-in scripts that suit this repo, run them, and tell me what needs fixing first.";
+  return (
+    <Sheet no="Ask" title="Let the agent pick" tone="fragment">
+      <p className="text-[13px] leading-relaxed text-ink-dim">
+        The agent lists the library with <Mono className="text-ink">test_scripts</Mono>, runs the read-only ones itself, and{" "}
+        {canExec ? "can run tools and test suites too, because running is on here." : "names the ones that run code for you to tick below, because running is off."}
+      </p>
+      <Button asChild variant="outline" size="sm" className="mt-3">
+        <Link href={`/r/${encodeURIComponent(repo)}/ask?q=${encodeURIComponent(prompt)}`}>
+          <Bot className="size-3.5" /> Ask AI to pick <ArrowRight className="size-3.5" />
+        </Link>
+      </Button>
+    </Sheet>
+  );
+}
+
 /**
- * External pytest directories registered against this repo. `library_set`
- * writes config, not graph, so the API's `note` ("re-index to pick it up") is
- * surfaced verbatim.
+ * External pytest directories registered against this repo. Registering one is
+ * an operator task (`aftershock library REPO add NAME DIR`, or the API), not a
+ * page form: tests come from the built-in library and the repo itself. What is
+ * registered stays visible here, removable, because this is where its absence
+ * shows up as "a repo with no tests".
  */
 function Libraries({ repo }: { repo: string }) {
   const q = useQuery(`libs:${repo}`, () => api.libraries(repo));
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const add = useAction(api.libraryAdd);
   const remove = useAction(api.libraryRemove);
-  const busy = add.loading || remove.loading;
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !path.trim()) return;
-    const res = await add.run(repo, name.trim(), path.trim());
-    if (!res) return;
-    setName("");
-    setPath("");
-    setAdding(false);
-    q.reload();
-    toast.success(`Added ${name.trim()}`, { description: res.note });
-  };
 
   const drop = async (lib: TestLibrary) => {
     const res = await remove.run(repo, lib.name);
@@ -117,77 +122,32 @@ function Libraries({ repo }: { repo: string }) {
   };
 
   const libs = q.data?.libraries ?? [];
+  if (!q.loading && !q.error && libs.length === 0) return null;
 
   return (
-    <Sheet
-      no="B · Libraries"
-      title="Test libraries"
-      note="pytest directories outside the repo tree"
-      tone="fragment"
-      flush
-      action={
-        <Button variant="ghost" size="sm" onClick={() => setAdding((v) => !v)} disabled={busy}>
-          <Plus className={cn("size-3.5 transition-transform", adding && "rotate-45")} />
-          {adding ? "Cancel" : "Add"}
-        </Button>
-      }
-    >
-      {adding && (
-        <form onSubmit={submit} className="mx-[clamp(14px,2vw,24px)] mb-3 grid gap-3 border border-line-loud bg-deep p-3">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)]">
-            <div>
-              <Label htmlFor="lib-name">Name</Label>
-              <input id="lib-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="integration" autoComplete="off" spellCheck={false} required className="gt-field w-full" />
-            </div>
-            <div>
-              <Label htmlFor="lib-path">Absolute path</Label>
-              <input
-                id="lib-path"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder="/srv/qa/integration-tests"
-                autoComplete="off"
-                spellCheck={false}
-                required
-                className="gt-field w-full font-mono"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" size="sm" disabled={busy || !name.trim() || !path.trim()}>
-              {add.loading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Register
-            </Button>
-            <span className="text-[12px] text-ink-dim">Must be a directory outside the repo. Re-index afterwards to pick up its tests.</span>
-          </div>
-          {add.error && <ErrorNote error={add.error} />}
-        </form>
-      )}
-
+    <Sheet no="Libraries" title="External test directories" note="registered with the CLI or API" tone="fragment" flush>
       {q.loading && !q.data ? (
         <Skeleton className="mx-[clamp(14px,2vw,24px)] mb-4 h-10" />
       ) : q.error ? (
         <div className="px-[clamp(14px,2vw,24px)] pb-4">
           <ErrorNote error={q.error} onRetry={q.reload} />
         </div>
-      ) : libs.length === 0 ? (
-        <p className={EMPTY}>
-          None. The repo&apos;s own <Mono className="text-ink">tests/</Mono> directory is always indexed — register a library only when tests live somewhere else on
-          disk.
-        </p>
       ) : (
         <ul className="pb-2">
           {libs.map((lib) => (
-            <li key={lib.name} className="gt-row grid-cols-[16px_minmax(0,1fr)_auto_28px]">
+            <li key={lib.name} className="gt-row grid-cols-[16px_minmax(0,1fr)_28px]">
               <Library className="size-4 text-ink-faint" aria-hidden />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13px] text-ink">{lib.name}</span>
                   {!lib.on_disk && <Chip tone="warn">missing</Chip>}
                 </div>
-                <Mono className="block truncate text-[11px] text-ink-dim">{lib.path}</Mono>
+                <Mono className="block truncate text-[11px] text-ink-dim">
+                  {lib.on_disk ? `${num(lib.tests ?? 0)} tests · ${num(lib.files ?? 0)} files · ` : ""}
+                  {lib.path}
+                </Mono>
               </div>
-              <Mono className="text-[11px] text-ink-dim">{lib.on_disk ? `${num(lib.tests ?? 0)} tests · ${num(lib.files ?? 0)} files` : ""}</Mono>
-              <Button variant="ghost" size="icon" className="size-7" aria-label={`Remove ${lib.name}`} disabled={busy} onClick={() => drop(lib)}>
+              <Button variant="ghost" size="icon" className="size-7" aria-label={`Remove ${lib.name}`} disabled={remove.loading} onClick={() => drop(lib)}>
                 <Trash className="size-3.5" />
               </Button>
             </li>
@@ -556,8 +516,13 @@ export default function TestsPage() {
             </form>
           </Sheet>
 
-          <Libraries repo={repo} />
+          <div className="flex min-w-0 flex-col gap-[clamp(16px,2.4vw,28px)]">
+            <AskToPick repo={repo} canExec={enabled} />
+            <Libraries repo={repo} />
+          </div>
         </Cols>
+
+        <ScriptLibrary repo={repo} onRan={history.reload} />
 
         {preview.error && <ErrorNote error={preview.error} onRetry={runPreview} />}
         {preview.data && !running && phase === "idle" && <SelectionPreview repo={repo} sel={preview.data} />}
