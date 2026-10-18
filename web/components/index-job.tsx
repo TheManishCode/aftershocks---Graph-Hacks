@@ -73,17 +73,17 @@ export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
   const at = job.status === "done" ? STAGES.length : Math.max(0, STAGES.findIndex((x) => x.key === job.stage));
   const frac = job.stage === "parse" && job.total ? (job.done ?? 0) / job.total : 0;
   return (
-    <div className="epi-in rounded-xl border border-border bg-card/60 p-4" aria-live="polite">
+    <div className="as-in rounded-panel border border-line bg-surface-raised p-4" aria-live="polite">
       <div className="mb-3 flex items-center gap-2 text-sm">
         {job.status === "running" && <Loader2 className="size-4 animate-spin text-brand" aria-hidden />}
-        {job.status === "done" && <Check className="size-4 text-pulse-green" aria-hidden />}
-        {job.status === "error" && <CircleAlert className="size-4 text-coral-red" aria-hidden />}
-        <span className="font-mono text-paper">{repo}</span>
-        <span className="text-muted-foreground">
+        {job.status === "done" && <Check className="size-4 text-pass" aria-hidden />}
+        {job.status === "error" && <CircleAlert className="size-4 text-fail" aria-hidden />}
+        <span className="font-mono text-ink-strong">{repo}</span>
+        <span className="text-ink-muted">
           {job.status === "running" ? "indexing…" : job.status === "done" ? "indexed" : (job.detail ?? "failed")}
         </span>
         {job.stage === "parse" && job.total ? (
-          <span className="ml-auto font-mono text-xs text-fog tabular-nums">
+          <span className="ml-auto font-mono text-caption text-ink-faint tabular-nums">
             {job.done}/{job.total} files
           </span>
         ) : null}
@@ -91,28 +91,28 @@ export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
       <ol className="grid grid-cols-5 gap-1.5">
         {STAGES.map((st, i) => (
           <li key={st.key} className="min-w-0">
-            <div className="h-1 overflow-hidden rounded-full bg-graphite">
+            <div className="h-1 overflow-hidden rounded-full bg-line">
               <div
-                className={cn("h-full rounded-full transition-[width] duration-300", job.status === "error" && i === at ? "bg-coral-red" : "bg-brand")}
+                className={cn("h-full rounded-full transition-[width] duration-300", job.status === "error" && i === at ? "bg-fail" : "bg-brand")}
                 style={{ width: i < at ? "100%" : i === at ? (st.key === "parse" ? `${Math.max(4, frac * 100)}%` : job.status === "error" ? "100%" : "40%") : "0%" }}
               />
             </div>
-            <div className={cn("mt-1.5 truncate text-[11px]", i <= at ? "text-mist" : "text-fog")}>{st.label}</div>
+            <div className={cn("mt-1.5 truncate text-micro", i <= at ? "text-ink" : "text-ink-faint")}>{st.label}</div>
           </li>
         ))}
       </ol>
       {job.status === "done" && job.report && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-caption text-ink-muted">
           {(["files", "parsed", "symbols", "edges"] as const).map((k) =>
             job.report![k] !== undefined ? (
               <span key={k}>
-                <span className="text-paper">{String(job.report![k])}</span> {k}
+                <span className="text-ink-strong">{String(job.report![k])}</span> {k}
               </span>
             ) : null,
           )}
           {typeof job.report.call_sites === "number" && job.report.call_sites > 0 && (
             <span>
-              <span className="text-paper">{Math.round(((job.report.resolved_sites as number) / job.report.call_sites) * 100)}%</span> call sites resolved
+              <span className="text-ink-strong">{Math.round(((job.report.resolved_sites as number) / job.report.call_sites) * 100)}%</span> call sites resolved
             </span>
           )}
         </div>

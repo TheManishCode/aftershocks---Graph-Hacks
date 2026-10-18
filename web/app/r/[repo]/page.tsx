@@ -13,10 +13,24 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { AlertTriangle, ArrowRight, Refresh, Zap } from "@/components/icons";
-import { Bento, Distribution, Grid, Metric, Panel, Scroller, Slab, Stack } from "@/components/ds";
+import {
+  Bento,
+  Distribution,
+  Empty,
+  ErrorNote,
+  Grid,
+  Meter,
+  Metric,
+  Page,
+  Panel,
+  Scroller,
+  Slab,
+  Spinner,
+  Stack,
+} from "@/components/ds";
 import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
 import { JobProgress, useIndexJob } from "@/components/index-job";
-import { Empty, ErrorNote, FileLink, Meter, Page, Receipts, Spinner, SymLink } from "@/components/kit";
+import { FileLink, Receipts, SymLink } from "@/components/kit";
 import { REPO_NAV, repoHref } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { api, type Overview } from "@/lib/api";
@@ -214,8 +228,9 @@ export default function OverviewPage() {
                   <Link
                     href={repoHref(repo, `/impact?t=${encodeURIComponent(s.id)}&change=signature`)}
                     className="shrink-0 rounded p-0.5 text-ink-faint hover:text-brand"
-                    aria-label={`Impact of changing ${symName(s.qname)}`}
-                    title="Impact of a signature change"
+                    // No title: it would differ from the accessible name, and a tooltip
+                    // is not where a control should explain itself.
+                    aria-label={`Impact of a signature change to ${symName(s.qname)}`}
                   >
                     <Zap className="size-3.5" />
                   </Link>
