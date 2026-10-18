@@ -41,7 +41,7 @@ def test_registry_is_consistent():
         assert s.category in catalog.CATEGORIES and s.ecosystem in catalog.ECOSYSTEMS and s.kind in catalog.KINDS, s.id
         assert s.name and s.summary, s.id
         if s.kind == "command":
-            assert s.argv or s.pytest_mode, s.id
+            assert s.argv or s.pytest_mode or s.runner, s.id
             assert s.fn is None, s.id
         else:
             assert callable(s.fn) and not s.argv, s.id

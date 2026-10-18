@@ -54,6 +54,7 @@ import {
   SunIcon,
   TerminalWindowIcon,
   TestTubeIcon,
+  DownloadSimpleIcon,
   TrashIcon,
   UsersIcon,
   WarningCircleIcon,
@@ -121,6 +122,7 @@ export const Sliders = light(SlidersHorizontalIcon, "Sliders");
 export const Sparkles = light(SparkleIcon, "Sparkles");
 export const Sun = light(SunIcon, "Sun");
 export const Terminal = light(TerminalWindowIcon, "Terminal");
+export const Download = light(DownloadSimpleIcon, "Download");
 export const TestTube = light(TestTubeIcon, "TestTube");
 export const Trash = light(TrashIcon, "Trash");
 export const Users = light(UsersIcon, "Users");

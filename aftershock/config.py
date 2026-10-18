@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     env_dir: Path = Path(".aftershock/envs")  # per-repo test interpreters (scripts/bench_env.py)
     history_commits: int = 2_000  # git log depth mined for churn / co-change / owners
     allow_run: bool = False  # D18: let the API run a repo's tests (loopback clients only); never exposed over MCP
+    # D29: comma-separated repos anyone with web access may run, set up and install tools for. The operator indexes
+    # them on the server; the API refuses to re-index, delete or attach libraries to them, so a visitor can't swap
+    # the code that runs. Public runs are capped (one at a time, `public_run_timeout`), and heal stays local.
+    showcase_repos: str = ""
+    public_run_timeout: int = 300
 
     anthropic_api_key: str | None = Field(
         None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "AFTERSHOCK_ANTHROPIC_API_KEY")
@@ -67,6 +72,9 @@ class Settings(BaseSettings):
 
     def allowed_host_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    def showcase(self) -> set[str]:
+        return {r.strip() for r in self.showcase_repos.split(",") if r.strip()}
 
     def clone_hosts(self) -> set[str]:
         return {h.strip().lower() for h in self.allowed_clone_hosts.split(",") if h.strip()}

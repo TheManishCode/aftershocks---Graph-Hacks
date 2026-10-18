@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import glob
 import json
+import logging
 import os
 import re
 import shutil
@@ -36,6 +37,8 @@ from functools import cached_property
 from pathlib import Path
 
 from .. import tools as T
+
+log = logging.getLogger(__name__)
 
 Emit = Callable[[str, dict], None]
 
@@ -63,8 +66,6 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".my
              ".pytest_cache", ".tox", ".nox", "dist", "build", ".next", "target", ".gradle", "vendor", ".idea",
              ".aftershock", "coverage", ".turbo", ".cache"}
 SCRIPT_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,63}$")
-# variables a subprocess must not inherit from the API: model keys, the API key, the graph password
-_SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)", re.IGNORECASE)
 
 
 @dataclass
@@ -90,6 +91,10 @@ class Script:
     argv: tuple[str, ...] = ()  # command: "{python}" is the repo's interpreter, "{tool}" the resolved tool
     tool: str | None = None  # executable the command needs; looked up in the venv, node_modules/.bin, PATH
     pytest_mode: str | None = None  # command: delegate to runtime.jobs.run_tests (recorded, culprits ranked)
+    # command: an in-process driver (catalog/probes.py) that runs the repo's interpreter itself, several times or
+    # with a helper; called as runner(ctx, emit=, cancel=, timeout=) and returns a result like `_command`'s
+    runner: Callable[..., dict] | None = None
+    local_only: bool = False  # never for a showcase visitor (D29): it spends model credit or writes to the checkout
     severity: str = "warn"  # a check with findings: "error" fails it, "warn" warns, "info" only reports
     timeout: int = 900
     tags: tuple[str, ...] = ()
@@ -101,7 +106,7 @@ class Script:
     def meta(self) -> dict:
         return {"id": self.id, "name": self.name, "category": self.category, "ecosystem": self.ecosystem,
                 "summary": self.summary, "kind": self.kind, "executes": self.executes, "tool": self.tool,
-                "severity": self.severity, "tags": list(self.tags)}
+                "severity": self.severity, "tags": list(self.tags), "local_only": self.local_only}
 
 
 REGISTRY: dict[str, Script] = {}
@@ -220,11 +225,15 @@ class Ctx:
             return None
 
     def resolve_tool(self, tool: str) -> str | None:
-        """The repo's own copy first (venv, node_modules/.bin), then PATH. Filesystem lookups only: nothing runs."""
+        """The repo's own copy first (venv, node_modules/.bin), then Aftershock's tool prefix, then PATH. Filesystem
+        lookups only: nothing runs."""
+        from ..runtime.setup import node_bin
+
         cands = []
         if self.python:
             cands.append(Path(self.python).parent / tool)
         cands.append(self.root / "node_modules" / ".bin" / tool)
+        cands.append(node_bin() / tool)  # where the Install button puts Node tools (D29)
         for c in cands:
             if c.is_file() and os.access(c, os.X_OK):
                 return str(c)
@@ -248,19 +257,35 @@ def scripts() -> list[Script]:
 
 def _load() -> None:
     # Import all three every time: importing one module elsewhere first must not leave the others unregistered.
-    from . import commands, graph_checks, static  # noqa: F401  registration happens on import (once per module)
+    from . import commands, graph_checks, probes, static  # noqa: F401  registration happens on import (once each)
 
 
 def _available(s: Script, ctx: Ctx) -> bool | None:
     if s.kind != "command":
         return True
-    if s.pytest_mode or (s.argv and s.argv[:3] == ("{python}", "-m", "pytest")):
+    if s.pytest_mode or s.tool == "pytest" or (s.argv and s.argv[:3] == ("{python}", "-m", "pytest")):
         return ctx.has_module("pytest")
     if s.argv[:2] == ("{python}", "-m") and s.tool:
         return ctx.has_module(s.tool.replace("-", "_"))
-    if s.argv[:1] == ("{python}",) and not s.tool:
+    if (s.argv[:1] == ("{python}",) or s.runner) and not s.tool:
         return ctx.python is not None
     return ctx.resolve_tool(s.tool) is not None if s.tool else True
+
+
+def install_for(s: Script, ctx: Ctx) -> dict | None:
+    """How to get a missing script runnable (D29): `setup` (the repo has no test interpreter yet, or the script
+    needs pytest), a `pip`/`npm` recipe, or a `manual` hint for tools that need the system package manager."""
+    from ..runtime.setup import recipe_for
+
+    python_tool = s.pytest_mode or s.runner or (s.argv[:1] == ("{python}",))
+    if python_tool and (ctx.python is None or s.tool in (None, "pytest")):
+        return {"method": "setup", "package": "", "hint": "set up the test environment"}
+    r = recipe_for(s.tool)
+    if r is None:
+        return None
+    if r.method == "pip" and ctx.python is None:
+        return {"method": "setup", "package": r.package, "hint": "set up the test environment, then install"}
+    return {**r.as_dict(), "tool": s.tool}
 
 
 def _checkout(repo: str) -> tuple[object, Path]:
@@ -292,14 +317,17 @@ def listing(repo: str, *, q: str | None = None, category: str | None = None, eco
             applies = False
         if applicable_only and not applies:
             continue
-        rows.append({**s.meta(), "applies": applies, "available": _available(s, ctx) if applies else None})
+        available = _available(s, ctx) if applies else None
+        rows.append({**s.meta(), "applies": applies, "available": available,
+                     "install": install_for(s, ctx) if available is False else None})
     by_cat: dict[str, int] = {}
     for r in rows:
         if r["applies"]:
             by_cat[r["category"]] = by_cat.get(r["category"], 0) + 1
     return {"scripts": rows, "total": len(REGISTRY), "applicable": sum(r["applies"] for r in rows),
             "categories": [{"id": k, "label": v, "applicable": by_cat.get(k, 0)} for k, v in CATEGORIES.items()],
-            "files_scanned": len(ctx.files)}
+            "files_scanned": len(ctx.files),
+            "env": {"python": ctx.python is not None, "pytest": bool(ctx.has_module("pytest"))}}
 
 
 def pick(ids: list[str], *, allow_exec: bool) -> list[Script]:
@@ -325,8 +353,9 @@ def pick(ids: list[str], *, allow_exec: bool) -> list[Script]:
 
 
 def run(repo: str, ids: list[str], emit: Emit | None = None, *, allow_exec: bool = False,
-        cancel: threading.Event | None = None, timeout: int | None = None) -> dict:
-    """Run the picked scripts one after another. Emits `start`, then `script` (running) and `result` per script."""
+        cancel: threading.Event | None = None, timeout: int | None = None, trigger: str | None = None) -> dict:
+    """Run the picked scripts one after another. Emits `start`, then `script` (running) and `result` per script.
+    With `trigger`, the batch is recorded (`run_id` in the result) so the Tests page can show it later."""
     emit = emit or (lambda kind, data: None)
     chosen = pick(ids, allow_exec=allow_exec)
     g, root = _checkout(repo)
@@ -341,8 +370,53 @@ def run(repo: str, ids: list[str], emit: Emit | None = None, *, allow_exec: bool
         results.append(res)
         emit("result", res)
     counts = {k: sum(r["status"] == k for r in results) for k in ("passed", "warned", "failed", "error", "skipped")}
-    return {"results": results, **counts, "seconds": round(time.monotonic() - t0, 3),
-            "stopped": len(results) < len(chosen)}
+    out = {"results": results, **counts, "seconds": round(time.monotonic() - t0, 3),
+           "stopped": len(results) < len(chosen)}
+    if trigger:
+        try:
+            out["run_id"] = record(repo, out, trigger)
+        except Exception:  # noqa: BLE001 -- results already streamed; losing the record must not lose them
+            log.exception("could not record the script run for %s", repo)
+    return out
+
+
+RUNS_KEEP = 20
+
+
+def record(repo: str, res: dict, trigger: str = "web") -> str | None:
+    """Keep a finished batch in the repo's graph (D29), so its results are still there when the page is reopened.
+    Output tails are cut to what the page shows; the last RUNS_KEEP batches are kept."""
+    from ..runtime.runs import new_id
+
+    if not res.get("results"):
+        return None
+    rid = new_id()
+    rows = [{**r, "output_tail": (r.get("output_tail") or "")[-2000:], "findings": (r.get("findings") or [])[:50]}
+            for r in res["results"]]
+    props = {"id": rid, "started": int(time.time() - (res.get("seconds") or 0)), "seconds": res.get("seconds", 0),
+             "scripts": len(rows), "trigger": trigger, "stopped": bool(res.get("stopped")),
+             **{k: res.get(k, 0) for k in ("passed", "warned", "failed", "error", "skipped")},
+             "results": json.dumps(rows, default=str)}
+    g = T._graph(repo)
+    g.rw("script_run_upsert", {"id": rid, "props": props})
+    g.rw("script_run_prune", {"keep": RUNS_KEEP})
+    return rid
+
+
+def history(repo: str, limit: int = 10) -> dict:
+    return {"runs": T._graph(repo).ro("script_runs", {"limit": max(1, min(int(limit), RUNS_KEEP))})}
+
+
+def recorded(repo: str, run_id: str) -> dict:
+    rows = T._graph(repo).ro("script_run", {"id": run_id})
+    if not rows:
+        raise T.NotFound(f"no script run {run_id}")
+    run = dict(rows[0]["run"])
+    try:
+        run["results"] = json.loads(run.get("results") or "[]")
+    except ValueError:
+        run["results"] = []
+    return run
 
 
 def run_one(s: Script, ctx: Ctx, *, emit: Emit | None = None, cancel: threading.Event | None = None,
@@ -395,8 +469,9 @@ def _findings_from(output: str, ctx: Ctx) -> list[Finding]:
 
 
 def scrubbed_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("AFTERSHOCK_", "COVERAGE_", "FALKORDB_")) and not _SECRET_ENV.search(k)}
+    from ..runtime.pytest_run import child_env
+
+    env = child_env()
     env.pop("FORCE_COLOR", None)  # some tools read any value, even 0, as "force colour on"
     env.update({"CI": "1", "NO_COLOR": "1", "TERM": "dumb", "PYTHONDONTWRITEBYTECODE": "1",
                 "npm_config_yes": "false", "NPM_CONFIG_UPDATE_NOTIFIER": "false"})
@@ -409,15 +484,22 @@ def _command(s: Script, ctx: Ctx, *, emit: Emit | None, cancel: threading.Event 
     if s.pytest_mode:
         return _pytest(s, ctx, emit=emit, cancel=cancel, timeout=timeout)
     avail = _available(s, ctx)
+    if s.runner is not None:
+        if avail is False:
+            return {"status": "skipped", "reason": f"{s.tool or 'an interpreter'} is not installed for this repo; "
+                                                   "set up its test environment", "findings": [], "count": 0,
+                    "install": install_for(s, ctx)}
+        return s.runner(ctx, emit=emit, cancel=cancel, timeout=timeout)
     if avail is False:
         need = s.tool or "an interpreter"
-        return {"status": "skipped", "reason": f"{need} is not installed for this repo (Aftershock never "
-                                               "downloads tools)", "findings": [], "count": 0}
+        return {"status": "skipped", "reason": f"{need} is not installed for this repo; use Install on the Tests "
+                                               "page or `aftershock setup`", "findings": [], "count": 0,
+                "install": install_for(s, ctx)}
     argv = []
     for a in s.argv:
         if a == "{python}":
             if not ctx.python:
-                return {"status": "skipped", "reason": "no interpreter for this repo (create .venv)",
+                return {"status": "skipped", "reason": "no interpreter for this repo; set up its test environment",
                         "findings": [], "count": 0}
             argv.append(ctx.python)
         elif a == "{tool}":
@@ -428,12 +510,29 @@ def _command(s: Script, ctx: Ctx, *, emit: Emit | None, cancel: threading.Event 
             argv.extend(many)
         else:
             argv.append(a)
+    rc, output, why = execute(argv, ctx, cancel=cancel, timeout=timeout)
+    if rc is None and why and why.startswith("could not start"):
+        return {"status": "error", "reason": why, "findings": [], "count": 0}
+    found = _findings_from(output, ctx)
+    status = "error" if why else ("passed" if rc == 0 else "failed")
+    res = {"status": status, "exit_code": rc, "command": " ".join(_display(argv, ctx)),
+           "findings": [f.as_dict() for f in found[:MAX_FINDINGS]], "count": len(found),
+           "output_tail": output[-OUTPUT_TAIL:]}
+    if why:
+        res["reason"] = why
+    return res
+
+
+def execute(argv: list[str], ctx: Ctx, *, cancel: threading.Event | None, timeout: float,
+            env: dict[str, str] | None = None) -> tuple[int | None, str, str | None]:
+    """Run one process in the checkout (no shell, scrubbed env, own process group, bounded output) and return
+    (exit code, output without colour codes, why it was cut short or could not start)."""
     t0 = time.monotonic()
     try:
-        p = subprocess.Popen(argv, cwd=ctx.root, env=scrubbed_env(), stdin=subprocess.DEVNULL,
+        p = subprocess.Popen(argv, cwd=ctx.root, env={**scrubbed_env(), **(env or {})}, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as e:
-        return {"status": "error", "reason": f"could not start {argv[0]}: {e.strerror}", "findings": [], "count": 0}
+        return None, "", f"could not start {Path(argv[0]).name}: {e.strerror}"
     chunks: list[bytes] = []
     size = [0]
 
@@ -451,22 +550,14 @@ def _command(s: Script, ctx: Ctx, *, emit: Emit | None, cancel: threading.Event 
         if cancel is not None and cancel.is_set():
             why = "stopped"
         elif time.monotonic() - t0 > timeout:
-            why = f"timed out after {timeout}s"
+            why = f"timed out after {int(timeout)}s"
         if why:
             _kill(p)
             break
         time.sleep(0.1)
     p.wait()
     reader.join(5)
-    output = _ANSI.sub("", b"".join(chunks).decode("utf-8", "replace"))
-    found = _findings_from(output, ctx)
-    status = "error" if why else ("passed" if p.returncode == 0 else "failed")
-    res = {"status": status, "exit_code": p.returncode, "command": " ".join(_display(argv, ctx)),
-           "findings": [f.as_dict() for f in found[:MAX_FINDINGS]], "count": len(found),
-           "output_tail": output[-OUTPUT_TAIL:]}
-    if why:
-        res["reason"] = why
-    return res
+    return p.returncode, _ANSI.sub("", b"".join(chunks).decode("utf-8", "replace")), why
 
 
 def _display(argv: list[str], ctx: Ctx) -> list[str]:

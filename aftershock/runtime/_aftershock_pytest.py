@@ -43,3 +43,9 @@ def pytest_runtest_logreport(report):
         row["message"] = (getattr(report, "longreprtext", "") or "")[-1500:]
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(row) + "\n")
+
+
+def pytest_collection_modifyitems(session, config, items):
+    # AFTERSHOCK_REVERSE: run the collected tests back to front (the flaky probe's order-dependence pass)
+    if os.environ.get("AFTERSHOCK_REVERSE"):
+        items.reverse()

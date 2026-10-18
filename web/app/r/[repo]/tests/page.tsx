@@ -67,7 +67,7 @@ const headline = (m = "") =>
     ?.replace(/^E\s+/, "") ?? "";
 
 /** Why the Run button is off, and the two ways to turn it on. A banner, not a wall. */
-function RunGate({ repo, reason }: { repo: string; reason: string | null }) {
+function RunGate({ repo, reason, showcase }: { repo: string; reason: string | null; showcase: string[] }) {
   return (
     <Sheet no="Gate" title="Running is off" tone="commission" className="mb-[clamp(16px,2.4vw,28px)]">
       <div className="flex items-start gap-2.5">
@@ -77,6 +77,16 @@ function RunGate({ repo, reason }: { repo: string; reason: string | null }) {
           below that reads the graph — libraries, selection, history — works either way.
         </p>
       </div>
+      {showcase.length > 0 && (
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-ink-dim">
+          On this server anyone can run:
+          {showcase.map((r) => (
+            <Link key={r} href={`/r/${encodeURIComponent(r)}/tests`} className="font-mono text-mark underline-offset-2 hover:underline">
+              {r}
+            </Link>
+          ))}
+        </p>
+      )}
       <Cols kind="halves" className="mt-4">
         <CodeBlock title="restart the API with the runner on" code="AFTERSHOCK_ALLOW_RUN=1 aftershock serve" />
         <CodeBlock title="or run it from a terminal instead" code={`aftershock run ${repo} --diff`} />
@@ -289,7 +299,7 @@ export default function TestsPage() {
   const sp = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const runtime = useQuery("runtime", api.runtime);
+  const runtime = useQuery(`runtime:${repo}`, () => api.runtime(repo));
   const history = useQuery(`runs:${repo}`, () => api.runs(repo, 10));
 
   const [mode, setMode] = useState<RunMode>(() => (MODES.some((m) => m.key === sp.get("mode")) ? (sp.get("mode") as RunMode) : "diff"));
@@ -451,7 +461,12 @@ export default function TestsPage() {
       ) : runtime.error ? (
         <ErrorNote error={runtime.error} onRetry={runtime.reload} className="mb-6" />
       ) : !enabled ? (
-        <RunGate repo={repo} reason={runtime.data?.reason ?? null} />
+        <RunGate repo={repo} reason={runtime.data?.reason ?? null} showcase={runtime.data?.showcase ?? []} />
+      ) : runtime.data?.public ? (
+        <p className="mb-6 flex flex-wrap items-center gap-2 text-[13px] text-ink-dim">
+          <Chip tone="info">showcase</Chip> Anyone can run this repo&apos;s tests here: one public run at a time across the site
+          {runtime.data.timeout ? `, ${num(runtime.data.timeout)} s at most` : ""}. Fixing with AI stays on the operator&apos;s machine.
+        </p>
       ) : null}
 
       <Stack>

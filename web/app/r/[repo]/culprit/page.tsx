@@ -278,8 +278,8 @@ function RunView({ repo, id, history }: { repo: string; id: string; history: Que
             >
               {!runtime.data?.enabled ? (
                 <p className="text-[13.5px] text-ink-dim">
-                  {runtime.data?.reason ?? "Running tests from the browser is off."} Start the API with <code className="font-mono text-ink">AFTERSHOCK_ALLOW_RUN=1</code> to
-                  re-run and fix from here.
+                  Fixing with AI edits files on disk, so it only runs on the operator&apos;s own machine: start the API there with{" "}
+                  <code className="font-mono text-ink">AFTERSHOCK_ALLOW_RUN=1</code>. The run, its failures and the ranked culprits above are readable by anyone.
                 </p>
               ) : !d.failed ? (
                 <p className="text-[13.5px] text-ink-dim">Nothing to fix: this run had no failing tests.</p>
