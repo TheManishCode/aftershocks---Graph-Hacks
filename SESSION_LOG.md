@@ -1,5 +1,43 @@
 # Session log
 
+## 2026-10-18 (D27): the web UI, rebuilt
+
+**Done.** Rebuilt the frontend from the backend outward on branch `ui-rebuild`, 5 commits
+(`251d834`, `2781be5`, `098a7ef`, `367115f`, `6aa522c`, plus docs). Extended `lib/api.ts` to cover every
+backend capability the old UI ignored; new Tests page (libraries visible, run gate explained, selection
+preview); new `Trace` and `CodeBlock` primitives; Ask rebuilt to stream tool calls with per-step receipts,
+a model picker and conversation checkpoints; `/settings/models` for bring-your-own provider keys
+(Anthropic native + any OpenAI-compatible endpoint). Then every remaining screen — landing, overview,
+Impact, Diff, Path, Cypher, impact-view, suspect-row, error boundaries, Culprit, Explore, graph-canvas —
+moved onto the design system, and the compatibility layers were deleted: 18 legacy colour aliases, the
+`LEVEL_*`/`TIER_*` maps, the `.epi-*` animations, the shadow aliases and the page-furniture shim in
+`kit.tsx`. Risk colour now has exactly one definition. Rules written up in `web/DESIGN.md`; the living
+style guide is the `/design` route.
+
+Fixed in passing: `title=` tooltips that disagreed with or substituted for accessible names (overview
+impact link, Path swap, suspect-row counts and score, Impact change-kind hints); glyph-only readouts with
+no `sr-only` equivalent; truncated lists that did not say how many they hid; error boundaries that
+swallowed the Next.js digest.
+
+**Verified (actually run).** `tsc --noEmit` clean; `next lint` clean; `jest` 30/30; **`next build`
+succeeds, 14 routes** (first time this was run on the rebuild — an earlier `/_not-found` invariant was a
+stale `.next` from building over a live dev server, and does not reproduce on a clean tree). SSR via curl
+on a freshly built `.next`: 13 routes, 12×200 plus a correct 404, each with exactly one `<main>`, and
+**zero legacy token class names in any output**.
+
+**Not verified — do not claim otherwise.** Nothing has been *seen*. The browser pane does not composite
+frames in this environment (`screenshot` times out with "the Browser pane is not displayed"), so there has
+been no visual check, no click-through and no screenshot at any point in this rebuild. The model-backed
+paths — Ask's streaming answer and the heal loop — are unexercised, because no provider key is configured
+on this machine; only their non-model branches have been rendered.
+
+**Known, left alone deliberately.** `aftershock/config.py:52` defaults `model` to `"claude-opus-5-5"`,
+which matches no documented Claude model id. The same string is in `analysis/heal.py:48`, `README.md`,
+`ARCHITECTURE.md` and two assertions in `tests/test_agent.py`, so changing it breaks the suite — it needs
+its own commit. The new provider catalogue in `aftershock/providers.py` uses real ids. Also: testlab is
+still CLI-only with no API route, so the UI cannot reach it.
+
+
 ## 2026-10-18 (D26): acting on the graph
 
 **Done.** Measured runs from the app, suspect basis/why, fixer with read-only graph tools and Cause/Evidence,

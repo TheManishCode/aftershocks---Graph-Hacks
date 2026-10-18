@@ -195,9 +195,6 @@
   --shadow-raised: inset 0 1px 0 0 rgb(255 255 255 / 6%), 0 1px 2px 0 rgb(0 0 0 / 40%);
   --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 75%), 0 0 0 1px var(--p-line-2);
   --shadow-accent-glow: 0 0 0 3px rgb(124 92 255 / 18%);
-  /* legacy aliases */
-  --shadow-subtle: 0 0 0 1px var(--p-line-1);
-  --shadow-subtle-4: var(--shadow-raised);
   --shadow-xl: var(--shadow-overlay);
   --shadow-cta: 0 1px 2px 0 rgb(0 0 0 / 35%);
 
@@ -594,14 +591,6 @@
 .as-glow {
   animation: as-glow 2.4s var(--ease-in-out-quart) infinite;
 }
-/* legacy aliases */
-.epi-in {
-  animation: as-in var(--dur-base) var(--ease-out-quint) backwards;
-}
-.epi-glow {
-  animation: as-glow 2.4s var(--ease-in-out-quart) infinite;
-}
-
 /* Staggered entrance for lists: set `style={{ "--i": n }}` on the child. */
 .as-stagger > * {
   animation: as-in var(--dur-base) var(--ease-out-quint) backwards;

@@ -2,6 +2,48 @@
 
 ## Unreleased (2026-10-18)
 
+### Changed: the web UI, rebuilt (D27)
+
+The frontend was rebuilt from the backend outward rather than restyled. Three problems
+drove it: the test library was not reachable from the UI at all, tests could not be run
+against a repo from the browser, and risk colour was defined in four places that
+disagreed.
+
+- **A design system, not a stylesheet.** `components/ds/*` is now the only source of
+  presentation: `Panel`/`Bento`/`Slab`/`Grid` for layout, `Metric`/`RiskGauge`/
+  `SeverityBar` for readouts, `CodeBlock` and `Trace` for machine output, and one
+  severity ramp with adapters (`fromLevel`, `fromTier`, `fromScore`, `fromProbability`)
+  for every risk vocabulary the API speaks. Rules and rationale: `web/DESIGN.md`; the
+  living version renders at **`/design`**.
+- **Colour has one meaning per hue.** Brand violet is chrome (actions, nav, links,
+  focus); the thermal ramp is data. Previously `medium` risk was violet, which made a
+  risk level look like a link.
+- **Tests are a first-class surface.** The Tests page lists registered test libraries,
+  shows the run gate and why it is closed, previews what a selection will run, and
+  records every run. A failing run offers *Investigate in Culprit* and *Fix with AI*.
+- **Ask streams its work.** Tool calls, their arguments and their results appear as
+  trace lines as they happen, each with its own receipts, instead of a spinner followed
+  by prose.
+- **Bring your own model.** `/settings/models` stores provider keys server-side for
+  Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Google, Groq,
+  DeepSeek, xAI, Mistral, Ollama), and a model picker in chat selects per-conversation.
+  Keys are never returned by a route, never logged, and never held in the browser.
+- **Conversation checkpoints.** Ask records a checkpoint per exchange and can roll the
+  thread back to one. Note this restores the *conversation*, not the working tree —
+  Aftershock is read-only over your repo everywhere except the heal loop.
+- **The heal loop states what it does before it does it.** It is the one surface that
+  writes to your files, and the panel now says so — including that edits land in the
+  working tree and not in a branch — before the button, not after.
+- **Evidence is labelled.** Suspects say whether a ranking came from measured coverage
+  or the static call graph; every graph edge shows how it was resolved and how
+  confident the resolver is; lists that cap say how many they are hiding.
+- **Accessibility.** One `<main>` per route; `title=` tooltips that disagreed with (or
+  substituted for) accessible names removed; glyph-only readouts given `sr-only` text;
+  streaming regions marked `aria-live`.
+- **Removed:** the legacy colour alias layer (18 `--color-*` variables), the
+  `LEVEL_*`/`TIER_*` colour maps in `lib/format.ts`, the `.epi-*` animation aliases and
+  the page-furniture shim in `components/kit.tsx`.
+
 ### Added: acting on the graph (D26)
 
 - **Measured runs:** Tests-page runs (selected or all) and the first heal run record per-test coverage, replacing
