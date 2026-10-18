@@ -1,5 +1,148 @@
 # Session log
 
+## 2026-10-18 (D26): acting on the graph
+
+**Done.** Measured runs from the app, suspect basis/why, fixer with read-only graph tools and Cause/Evidence,
+`run_detail.next`, MCP `run_tests`/`heal` (local stdio + opt-in only), UI for all of it. Fixed: heal verify runs
+polluted flakiness history; "ranked on static graph" label on passing runs; "all" mode was not measured.
+
+**Verified.** pytest 174 passed, ruff clean, tsc/eslint clean, jest 30 passed. Live MCP stdio session against the
+sample repo: run_tests all → 2 failed, measured → heal fixed 2 → 0 with explanation. CLI fixer called `symbol` and
+`explain_path` on a real Claude call. UI checked headless (8111 API / 3111 next dev, both stopped): badges, why,
+explanation and lookups render; no console errors; no overflow at 390 px.
+
+**Not done.** Nothing committed (awaiting the user). zz-* graphs not deleted. The sample repo
+`loopdemo/shop` keeps the applied fix in its working tree.
+
+
+## 2026-10-18 (test loop): test library, runs in the graph, heal from the app (D25)
+
+**Done.** Backend: library registration/indexing/running, TestRun graph schema, run history, heal with graph
+context, API + MCP read tools, CLI `library` / `runs`. UI: failure callout on Tests, recorded-run view and streamed
+fix loop on Culprit, recent runs. Fixed on the way: coverage ignored libraries; static reach tied a planted bug with
+its callers (coverage now replaces it for measured passing tests); the web proxy did not gate the heal route.
+
+**Verified.** pytest 169 passed; ruff, tsc, eslint clean; jest 30 passed. Headless Chromium against a separate API
+(8111, run gate on) and `next dev` (3111): run → callout → run view (top suspect `discount_rate`) → Fix with AI with a
+real Claude call → round 1 fixed 2 → 0, lineage shown, no console errors, no horizontal overflow at 390 px.
+
+**Not done.** Nothing committed (awaiting the user). zz-* graphs (incl. the new `zz-shop-loop`) not deleted.
+
+
+## 2026-10-18 (gaps): heal on real bugs, held-out repos, resolution fixes, full-text search, demo
+
+**Done.** D20–D24 (CHANGELOG). heal bench on click: 6 of 6 fixed, rank-1 correct, exact reverts, full suite green
+after each. Held-out flask and starlette added; weight fitting gave no held-out gain (weights unchanged). Top-5 head of
+the ranked file list beats same-dir F1 on 4 of 5 repos; flask still loses. Demo video in `media/`.
+
+**Measured.** Eval at 200 commits, depth 3 (README table). click mutation (n 30, seed 7): static recall .331 → .394,
+caught 50% → 61%. Resolution: zustand 75.3% → 76.0%; flask edges 1,698 → 2,530 after the shallowest-root fix, but
+flask all-tier F1 .127 → .096 (more test files reached, which the commit did not edit).
+
+**Found on the way.** flask's `tests/test_apps/.../flask.py` made `flask` ambiguous, so the test suite had no edges
+into the package. The UI server on :3101 (other session's) is a build that predates the Tests page: `/r/*/tests`
+returns 404 there; the API on :8100 predates full-text search. Neither was restarted.
+
+**Verified.** `pytest -q` 159 passed; `ruff check aftershock tests scripts` clean. click-eval checkout clean after
+bench and mutate.
+
+**Not committed.** Scratch `zz-click-old`, `zz-httpx-old`, `zz-zustand-old`, `zz-click-heal` graphs remain (delete on
+request).
+
+## 2026-10-18 (judge fixes): implicit-call edges, coverage survival, UX review fixes
+
+**Done.** Everything in the judges' engineering and UX lists except weight fitting, deeper FalkorDB use, `heal` on a
+real repo and a demo video (D19, CHANGELOG). Fair static before/after eval: old code (backup
+`~/.aftershock-backups/aftershock-20261018-judgefix.tgz`) indexed as `zz-*-old` graphs and evaluated in the same run.
+
+**Measured.** click recall .167 → .211, F1 .140 → .143; httpx recall .106 → .180, F1 .124 → .137; zustand unchanged.
+Same-dir baseline still wins F1 on all three. click mutation (n 30, seed 7): static selection recall .116 → .331,
+caught 33% → 50%, at 16.8% of the suite.
+
+**Found on the way.** A first measurement looked worse (click F1 .123): re-index had started keeping 47k `COVERS`
+edges, the eval was using them, and a parser bump marked all of them stale. Eval is now static; staleness is set only
+on content change. Ablation confirmed constructor and implicit edges help code-file F1 (.151 off vs .180 on).
+
+**Verified.** `pytest` 147 passed; `ruff check aftershock tests` clean (10 pre-existing findings in vendored
+`testlab/bugs/quixbugs`). Web: non-test `tsc` clean, `next build` ok; headless Chromium over CDP on a scratch build:
+node click rings the node, fills the selection bar, opens and scrolls to the row; at 390px with coarse pointer the
+pane is not draggable, a swipe over the graph scrolls the page, no horizontal overflow, no button under 44px hit
+area, no console errors. Web test tooling is missing dev deps (jest types, `jest-environment-jsdom`,
+`eslint-plugin-testing-library`); not installed.
+
+**Not committed.**
+
+## 2026-10-18 (heal): Claude-driven fix loop on top of the runtime layer
+
+**Goal.** The original ask was: AI reads the code, selects tests, runs them, lists issues, and tries to resolve them.
+A separate line of work in this session (above) built the select/run/rank half for real (`coverage`, `run`, `mutate`,
+coverage-aware culprit) and front-end component tests (React Testing Library). This closes the remaining piece: the
+"tries to resolve them" half.
+
+**Done.**
+
+- `aftershock/analysis/heal.py` + `aftershock heal <repo> [--diff] [--apply] [--max-rounds N]` (D16). Built directly
+  on the runtime layer (`runtime.pytest_run.run_selected`) and `tools.culprits`, not a separate test-running path:
+  select -> run for real -> rank the top suspect -> ask Claude to rewrite its whole file -> re-run the same tests ->
+  keep only if the failing set strictly shrank, else revert and try the next suspect. Bounded rounds, dry-run by
+  default.
+- 9 tests (`tests/test_heal.py`): real subprocess pytest runs against an on-disk fixture with two independent bugs
+  (`calc.py`), a stub graph, and a monkeypatched `tools.culprits`/model call for the orchestration loop. Covers:
+  all-passed (never touches Claude), dry-run with and without an API key (never touches Claude, never writes), a kept
+  fix, a reverted fix that doesn't help, and a partial fix that is kept and the loop narrows in on the second bug on
+  the next round.
+- Built and verified in an isolated cloud Python harness against the real `aftershock` package (synced from this
+  checkout) before touching this checkout, to avoid half-working code landing on the only working copy. Nine distinct
+  bugs were found and fixed during that process (masking of a combined test-runner result, a tail-selection bug, a
+  progress-detection bug that let a different-but-same-size failure set count as "no progress", a file-revisit bug
+  that blocked fixing two bugs in the same file, a stale `failing_refs` computed once before the loop instead of each
+  round, `python` instead of `sys.executable`, a missing dataclass default, an unused import, and (resolved for free
+  by reusing the runtime layer's own `run_pytest`, which already sets it) a `__pycache__` staleness issue from
+  rewriting and re-running a file within the same second).
+- `DECISIONS.md` D16, `CHANGELOG.md`, `ARCHITECTURE.md`, `HANDOFF.md`, `README.md` updated; `LICENSE` (MIT, matching
+  `pyproject.toml`) added and the README license line fixed.
+
+**Verified.** `ruff check` clean (including on this checkout, confirmed directly). `pytest tests/test_heal.py` and
+the full non-graph suite (72 passed, 45 skipped) green in the isolated harness built from this checkout's real code;
+`ruff` re-confirmed directly on this checkout after the files were written here. This checkout's own `.venv/bin/python`
+is a symlink outside the folder this session can reach (to a uv-managed interpreter), so `pytest` itself could not be
+re-run directly on this machine from here — run `pytest tests/test_heal.py -v` yourself to get the same 9/9 on this
+exact checkout.
+
+**Not done.** `heal --apply` has not been run for real against a full indexed benchmark repo with a live model and a
+live FalkorDB graph (D15's scratch-fixture-only testing strategy applies here too) — see HANDOFF's next steps. JS/web
+test failures are not covered by `heal` (same reason runtime evidence is Python-only: no per-test JS coverage layer
+exists yet to build culprit ranking on).
+
+## 2026-10-18 (evening): runtime evidence (coverage, run, mutate) and benchmarks
+
+**Goal.** The user asked to use Testing Library to "run tests with AI", list and fix failures, and find more tests
+to benchmark with. Testing Library is a set of JS component-test helpers, not a test corpus, so the build went to
+what makes test-driven answers real for any Python repo instead.
+
+**Done.**
+
+- `aftershock coverage | run | mutate` (D15), with COVERS edges in impact, test selection and culprit.
+- `bench/repos.toml` and `scripts/bench_env.py`; envs built for click and httpx.
+- A web "ran it" badge. 15 new tests.
+
+**Measured.** On click, coverage recording took 7.6s for 47,210 edges. Mutation n=30, seed 7: 18 killed, 12 survived.
+
+| Selector | Recall | Caught |
+|---|---|---|
+| static | .057 | 28% |
+| same-name | .043 | 22% |
+| coverage | .997 | 100% (by construction) |
+
+**Verified.** pytest 109 passed; ruff clean; tsc clean for app code. eslint and next build are blocked by an
+uninstalled Jest setup that appeared in `web/` at 16:06 from outside this work (HANDOFF); I did not touch it.
+
+**Not done.** httpx mutation: its tests need port 8000, which the Epicenter stack holds. The web server was not
+rebuilt.
+
+**Mistakes.** `tar` overwrote the pre-runtime snapshot `aftershock-20261018-runtime.tgz`. The post-change archive is
+now `…-runtime-after.tgz`, and the newest pre-change snapshot is `…-friendly.tgz`.
+
 ## 2026-10-18 (late): reference graphs hidden, overloads, friendlier UI
 
 **Goal.** The user asked why the reference repos were listed on the home page, and to resolve the open gaps, raise the
@@ -206,3 +349,52 @@ See HANDOFF.
 **Verified.** pytest: 91 passed. ruff is clean. Epicenter's git tree is clean. The web app was not changed.
 
 **Not done.** Flagging unresolvable imports; harness-hub scoring.
+
+## 2026-10-18 — Testlab: end-to-end scenario suites
+
+**Goal.** Build a complete end-to-end test library for Aftershock, using existing published tests where possible.
+
+**Done.**
+
+- `aftershock/testlab.py` + `aftershock testlab`: known-answer scenarios through diff → impact → select → full-suite
+  run → selected rerun → culprit, with declared gaps (D17). The format is in `testlab/README.md`.
+- Suites:
+  - ledger: new Python fixture, 9 scenarios.
+  - inventory: TypeScript, 3 scenarios, static only.
+  - QuixBugs: 40 real bugs, vendored with their tests by `scripts/vendor_quixbugs.py`.
+- Product fixes the first run exposed:
+  - f-string and escaped-string edits went undetected (`PARSER_VERSION` 14);
+  - selection pruned reachable tests below p 0.03;
+  - there were no test → fixture edges;
+  - the `Class.factory().method()` chain was unresolved.
+- `mutate` now scores the product's real selection (impact plus reachability).
+- Click re-indexed and coverage re-recorded (47,210 COVERS edges).
+- Recovery point: `~/.aftershock-backups/aftershock-20261018-testlab.tgz`.
+
+**Results (measured).**
+
+- ledger: 9/9, recall 1.0, culprit #1 7/7. Before the fixes: 6/9, recall .70.
+- inventory: 3/3.
+- QuixBugs: 40/40, recall 1.0, culprit #1 40/40, 254 s.
+- Click mutation, static selection: recall .057 → .116, at 7.0% of the suite.
+
+**Verified.** pytest: 125 passed, including `tests/test_testlab.py` against the live graph. ruff is clean. The web app
+was not changed.
+
+**Not done.**
+
+- A JS runtime suite.
+- A click scenario set.
+- Nothing is committed.
+
+## 2026-10-18 -- run tests from the UI (D18) + judge review
+
+- Built: gated SSE run route (`runtime/jobs.py`, `api.py`), streaming/cancellable `run_pytest`, proxy loopback checks,
+  web Tests page, Run links from Impact/Diff, `SuspectRow` shared with Culprit, `error.tsx`, `ErrorNote` retry.
+- Judge fixes: REST DNS-rebinding guard, edited/added tests selected, testlab `_apply` all-or-nothing, Explore error
+  shown, Tailwind v4 width syntax in the symbol picker.
+- Verified: `pytest -q` 140 passed (FalkorDB up); `ruff` clean; `tsc` clean for app code (90 errors, all in Jest test
+  files without installed types). Not verified: the page in a real browser, `eslint`, `next build`.
+- Backup: `~/.aftershock-backups/aftershock-20261018-webrun.tgz`. Nothing committed.
+- Open (from judges): `__init__`/dunder/property callers, kwargs arity false positives, module-level and added-override
+  seeds, COVERS dropped on re-index, uncapped edge queries, Cypher LIMIT guard, demo video, F1 vs same-dir baseline.

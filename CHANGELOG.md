@@ -2,7 +2,155 @@
 
 ## Unreleased (2026-10-18)
 
-### Added
+### Added: acting on the graph (D26)
+
+- **Measured runs:** Tests-page runs (selected or all) and the first heal run record per-test coverage, replacing
+  COVERS only for the tests that ran; culprits for that run rank on executed code.
+- **Explained suspects:** each suspect has `basis` (coverage/static) and `why` (counts, Ochiai score, hops), shown in
+  the Culprit page.
+- **Fixer with graph tools:** Claude queries the graph read-only (CLI: its own locked-down stdio MCP server; API: a
+  bounded tool loop) and states `Cause:` / `Evidence:`; rounds record the explanation and the lookups.
+- **`next` on `run_detail`:** suggested follow-up tool calls with reasons.
+- **MCP `run_tests` and `heal`:** only on a local stdio server started with `AFTERSHOCK_ALLOW_RUN=1`; never on HTTP
+  `/mcp`, never offered to the Ask agent.
+- **Fixed:** heal verify runs counted toward a test's flakiness history.
+
+### Added: the test loop (D25)
+
+- **Test library:** `aftershock library <repo> add|remove|list` registers an outside pytest directory; it is indexed
+  as `@lib/<name>/…` tests, selected and run with the repo's tests, and included in `coverage`.
+- **Test runs in the graph:** every run is a `TestRun` node with RAN / SUSPECTS / RETRY_OF edges (last 50 kept).
+  `aftershock runs <repo> [id]`, `GET /repos/{r}/runs`, `GET /repos/{r}/runs/{id}`, `GET /repos/{r}/libraries`, MCP
+  `test_runs`, `run_detail`, `test_libraries`.
+- **Heal from the app:** `POST /repos/{r}/runs/{id}/heal/stream` (behind the run gate). Claude's prompt now includes
+  the graph chain from failing test to suspect and the source along it.
+- **UI:** a failing run on the Tests page offers *Investigate in Culprit* and *Fix with AI*; the Culprit page opens a
+  recorded run (`?run=`) with failures, per-test history, suspects with chains, retry lineage and the pytest tail, and
+  streams the fix loop (rounds, diffs, links to each re-run). Recent runs are listed on both pages.
+- **Culprit:** recorded coverage now replaces static reach for passing tests that were measured (functions only), so
+  code a healthy test could reach but skipped is not cleared by it.
+- **Security:** the web proxy's loopback check now also covers the heal route.
+
+
+### Fixed and added (closing the judges' remaining gaps, D20–D24)
+
+- **`heal` verified on real bugs.** `scripts/heal_bench.py` plants six one-line bugs in click and runs
+  `heal --diff --apply` with a live model: 6 of 6 fixed in one round, rank-1 culprit correct each time, every fix an
+  exact revert, 0 full-suite failures after (README table).
+- **`heal` widens a green selection (D21).** If every selected test passes, it runs the tests reaching the change
+  within 12 hops before reporting green; `widened` is in the report. Caught `_build_prompt`, whose only failing test
+  is about ten hops away.
+- **Culprit searches back from deep changes.** A changed symbol beyond the forward search depth is still ranked, via
+  the shortest test → … → change chain (`culprit.CHANGED_DEPTH` 12).
+- **Runner:** a nested function in a test (`test_a.helper`) runs as its enclosing test instead of aborting the whole
+  pytest run with "not found"; explicitly named files that pytest's default pattern would not collect are skipped
+  unless the repo configures `python_files`.
+- **Python resolution (D20):** an absolute import of a stdlib name never maps into a same-named repo module
+  (`flask/typing.py`); an ambiguous suffix resolves to the shallowest root (`src/flask` over a test app's
+  `flask.py`), taking flask from 1,698 to 2,530 edges. `@pytest.mark.parametrize` rows built by one constructor type
+  their parameter; `a, b = f()` with `-> tuple[A, B]` types each name; `x: A | B` resolves `x.m()` to both.
+- **JS closure objects (D22, PARSER_VERSION 20):** closures gathered into an object literal are its methods; a
+  member missing from a known literal no longer falls back to a same-named method elsewhere.
+- **Full-text search (D23):** FalkorDB full-text index on `Symbol(name, doc)`; `search` (API, MCP, UI picker) finds
+  symbols by docstring words when the name match comes up short (`match: "text"`).
+- **Eval (D24):** `top5` / `top10` variants score the head of the ranked file list. Two held-out repos, flask and
+  starlette, are pinned in `bench/repos.toml`. Top-5 beats the same-dir baseline on 4 of 5 repos (README).
+- **Weights:** `scripts/fit_weights.py` fits `weights.json` on train repos and writes only on held-out gain. It found
+  none, so the weights are unchanged.
+- **Demo:** `media/aftershock-demo.mp4` (35 s, httpx), recorded by `scripts/demo_video.mjs`.
+
+### Fixed (judges' static-recall review, D19)
+
+- **Constructors, dunders, `@property` reads and module values now have callers.** `Class(...)` reaches
+  `Class.__init__`/`__new__`/`__post_init__`; `PARSER_VERSION` 15, graphs re-parse on next index. Call-site resolution
+  on click 56% → 66%, httpx 52% → 78%. Static recall: click .167 → .211, httpx .106 → .180 (README table).
+- Keyword-argument calls were reported as definite signature breaks; only the positional upper bound is checked now.
+- Module-level value changes and newly added overrides now produce seeds.
+- Re-indexing deleted `COVERS` edges; they are kept, and those into edited files are marked stale (weight × 0.8).
+- `eval` no longer lets HEAD coverage leak into replayed commits (static only).
+- Graph queries have stable `ORDER BY` and caps where results are user-scaled; the read-only Cypher guard clamps
+  any `LIMIT` above `max_rows`; culprit ranking walks all failing tests together (one query per hop, not per test).
+
+### Fixed (web UX review)
+
+- Clicking a graph node now rings it, shows a selection bar (name, tier, hop, why), and opens and scrolls to its row.
+- On touch screens the graph no longer traps page scroll (one-finger drag scrolls the page; pinch zooms).
+- Root `not-found`, `error`, `global-error` and `loading` pages; repo-level loading skeleton.
+- Shortcut hints show ⌘ on Apple platforms and Ctrl elsewhere; 10px text raised to 11px, low-contrast copy raised to
+  `fog`; buttons, selects and switches get a 44px hit area on coarse pointers.
+
+### Added (run tests from the UI, D18)
+
+- **Tests page** (`/r/{repo}/tests`): run the working-tree diff's tests, the tests for chosen symbols, the whole
+  suite, or record coverage; results stream in per test, grouped by file with failures first, and culprits are
+  ranked when anything fails. Impact and Diff link to it ("Run") and copy the `pytest` command.
+- `POST /api/v1/repos/{r}/run/stream` (SSE) and `GET /api/v1/runtime`. Off unless `AFTERSHOCK_ALLOW_RUN=1`;
+  loopback clients only; not on MCP. `aftershock/runtime/jobs.py` drives it.
+- `run_pytest` streams per-test results while pytest runs and can be cancelled (kills the process group).
+- `web/app/r/[repo]/error.tsx` (recoverable error boundary); `ErrorNote` has a Retry button.
+
+### Fixed (judge review)
+
+- **DNS rebinding on the REST API**: without an API key, requests with a Host other than loopback or
+  `AFTERSHOCK_ALLOWED_HOSTS` get 421.
+- **Edited or added tests were not selected**; they now are (deleted ones are skipped, renamed ones run by new id).
+- **testlab left partial edits on disk** when a later edit in a scenario failed to apply; `_apply` now restores them.
+- Explore's starting-points tile swallowed load errors; the symbol picker used a Tailwind v3 width syntax under v4.
+
+### Added (testlab, D17)
+
+- **`aftershock testlab [suites] [--only X] [--list] [--json] [--keep]`**: end-to-end scenario suites with known
+  answers (`testlab/`). Each scenario changes a fixture repo, then the runner drives diff → impact → select → full
+  suite (ground truth) → selected-only rerun → culprit, and scores each step. Format and how to add suites:
+  `testlab/README.md`.
+- Suites: `ledger` (Python, 9 hand-written scenarios), `inventory` (TypeScript, 3, static), `quixbugs` (40 real
+  published bugs from QuixBugs, MIT, vendored by `scripts/vendor_quixbugs.py` with its own pytest cases).
+- `tests/test_testlab.py` runs ledger, inventory and one QuixBugs bug in the normal pytest run.
+
+### Fixed (found by testlab)
+
+- **Edits inside f-strings and escaped strings were not detected** (`f"A{n:04d}"` → `:03d` read as no change): the
+  body fingerprint skipped text the parser keeps outside child nodes. `PARSER_VERSION` 14; existing graphs re-parse
+  on their next index.
+- **Test selection dropped tests that reach a change through long or dispatch chains**: impact prunes below
+  p 0.03, which is right for "likely to break" but not for "what to run". `select_tests` now adds every test that
+  statically reaches the change (p 0, `reach: true`), ranked after the probable ones. `mutate` scores the same set.
+- **Tests that reach code only through pytest fixtures were not selected**: a test (or fixture) now has a CALLS edge
+  to each fixture its parameters name (same class, same file, conftest.py upwards).
+- **`Class.factory(...).method()` was unresolved**: a class-method call result is typed by its declared return.
+
+### Added (runtime evidence, D15)
+
+- **`aftershock coverage <repo>`** runs the repo's pytest suite once under per-test coverage, in the repo's own
+  interpreter, and stores `(test)-[:COVERS]->(symbol)` edges. Impact, test selection and culprit use them when present.
+  On click (2263 tests, 7.6s) it recorded 47,210 edges. Selected tests for `wrap_text` went from 12 static to 122,
+  and for `Context.invoke` from 0 to 265.
+- **`aftershock run <repo> [targets | --diff]`** runs only the selected tests and lists failures with their messages.
+  For failures, it ranks culprits, seeded by the change.
+- **`aftershock mutate <repo> --n 30`** is mutation evaluation. In a scratch copy, it makes each sampled function raise
+  at entry and runs the whole suite; the tests that newly fail are the ground truth. It scores static, coverage and
+  same-name test selection, and lists survivors (functions no test notices breaking).
+- **Culprit ranking** uses recorded coverage as the spectrum (classic Ochiai) alongside static reachability.
+- **`bench/repos.toml` + `scripts/bench_env.py`**: pinned benchmark repos with test-only install sets, built into
+  `.aftershock/envs/<name>` via uv. Ready: click, httpx (needs port 8000 free). Unsupported, with reasons:
+  code-graph-rag and zustand.
+- **Web:** tests found by recorded coverage carry a "ran it" badge. `COVERS` steps read "ran". The empty state points
+  to `aftershock coverage`.
+- `select_tests` returns a `runtime` flag per test and a note that says whether coverage was used.
+- Dev dependency: `coverage>=7.6`. 15 new tests (`tests/test_runtime.py`), including end-to-end record, run, culprit
+  and mutate runs on a scratch fixture.
+
+### Added (heal, D16)
+
+- **`aftershock heal <repo> [targets | --diff] [--apply]`** closes the loop the hackathon brief asked for: select the
+  tests a change reaches, run them for real (same runtime layer as `run`), and -- with `--apply` and
+  `ANTHROPIC_API_KEY` -- let Claude propose a whole-file fix for the top fault-localization suspect, then re-run the
+  same tests to check. A round is kept only if the failing set strictly shrank; otherwise it is reverted immediately
+  and the next suspect is tried, up to `--max-rounds` (default 3). Without `--apply`, `heal` only reports, like `run`.
+- Dry-run is the default: no API key or no `--apply` means Claude is never called and no file is ever written.
+- 9 new tests (`tests/test_heal.py`): real subprocess test runs against an on-disk fixture, a monkeypatched
+  `tools.culprits`/model call for the orchestration loop, covering all-passed, dry-run (with and without a key), a
+  kept fix, a reverted fix, and a partial fix that is kept and narrowed on the next round.
 
 - **Reference graphs are hidden, not listed** (D13). Graphs named in the Redis set `aftershock:lab` (click, httpx,
   zustand, code-graph-rag, epicenter, epitest) no longer appear on the home page, in `/repos`, MCP or the CLI list.

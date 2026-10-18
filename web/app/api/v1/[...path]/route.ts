@@ -16,10 +16,32 @@ const SEGMENT = /^[\w.\-:@]+$/; // repo names, "dead-code", "diff.md"; never "."
 const PASS_REQ = ["content-type", "accept", "last-event-id"];
 const PASS_RES = ["content-type", "cache-control", "x-accel-buffering", "retry-after"];
 
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** A loopback Host (and Origin, when the browser sends one): blocks LAN visitors, DNS rebinding and cross-site posts. */
+function fromThisMachine(req: NextRequest): boolean {
+  const name = (h: string) => (h.startsWith("[") ? h.slice(0, h.indexOf("]") + 1) : h.split(":")[0]).toLowerCase();
+  if (!LOOPBACK.has(name(req.headers.get("host") ?? ""))) return false;
+  const origin = req.headers.get("origin");
+  if (!origin) return true;
+  try {
+    return LOOPBACK.has(name(new URL(origin).host));
+  } catch {
+    return false;
+  }
+}
+
 async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
   if (!path.length || path.some((s) => !SEGMENT.test(s) || s === "." || s === "..")) {
     return Response.json({ detail: "invalid path" }, { status: 400 });
+  }
+  if (path.length === 1 && path[0] === "runtime" && !fromThisMachine(req)) {
+    return Response.json({ enabled: false, reason: "running tests is only allowed from this machine" });
+  }
+  if (path[0] === "repos" && (path[2] === "run" || (path[2] === "runs" && path[4] === "heal")) && !fromThisMachine(req)) {
+    // running tests executes repo code (D18), heal also edits it (D25); the API checks too, but only sees this proxy's loopback address
+    return Response.json({ detail: "running tests is only allowed from this machine" }, { status: 403 });
   }
   const url = `${UPSTREAM}/api/v1/${path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
   const headers = new Headers();

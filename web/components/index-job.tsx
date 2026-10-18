@@ -75,7 +75,7 @@ export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
   return (
     <div className="epi-in rounded-xl border border-border bg-card/60 p-4" aria-live="polite">
       <div className="mb-3 flex items-center gap-2 text-sm">
-        {job.status === "running" && <Loader2 className="size-4 animate-spin text-gold" aria-hidden />}
+        {job.status === "running" && <Loader2 className="size-4 animate-spin text-brand" aria-hidden />}
         {job.status === "done" && <Check className="size-4 text-pulse-green" aria-hidden />}
         {job.status === "error" && <CircleAlert className="size-4 text-coral-red" aria-hidden />}
         <span className="font-mono text-paper">{repo}</span>
@@ -93,7 +93,7 @@ export function JobProgress({ repo, job }: { repo: string; job: JobState }) {
           <li key={st.key} className="min-w-0">
             <div className="h-1 overflow-hidden rounded-full bg-graphite">
               <div
-                className={cn("h-full rounded-full transition-[width] duration-300", job.status === "error" && i === at ? "bg-coral-red" : "bg-gold")}
+                className={cn("h-full rounded-full transition-[width] duration-300", job.status === "error" && i === at ? "bg-coral-red" : "bg-brand")}
                 style={{ width: i < at ? "100%" : i === at ? (st.key === "parse" ? `${Math.max(4, frac * 100)}%` : job.status === "error" ? "100%" : "40%") : "0%" }}
               />
             </div>

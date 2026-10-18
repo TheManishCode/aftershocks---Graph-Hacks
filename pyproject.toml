@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 agent = ["anthropic>=1.15,<2"]
-dev = ["pytest>=9", "httpx>=0.28", "ruff>=0.17", "anthropic>=1.15,<2"]
+dev = ["pytest>=9", "coverage>=7.6", "httpx>=0.28", "ruff>=0.17", "anthropic>=1.15,<2"]
 
 [project.scripts]
 aftershock = "aftershock.cli:main"

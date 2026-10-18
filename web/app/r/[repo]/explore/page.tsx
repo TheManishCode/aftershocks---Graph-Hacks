@@ -12,7 +12,7 @@ import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
 import { api, type FileDetail, type Neighbor, type SymbolBrief, type SymbolDetail } from "@/lib/api";
 import { HOW, num, pct, relTime, splitId, symName } from "@/lib/format";
-import { useQuery, useRepo } from "@/lib/hooks";
+import { useModKey, useQuery, useRepo } from "@/lib/hooks";
 
 function NeighborList({ repo, items, empty }: { repo: string; items: Neighbor[]; empty: string }) {
   if (!items.length) return <p className="p-2 text-sm text-muted-foreground">{empty}</p>;
@@ -21,7 +21,7 @@ function NeighborList({ repo, items, empty }: { repo: string; items: Neighbor[];
       {items.map((n) => (
         <li key={`${n.id}:${n.type}`} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white/[0.03]">
           <SymLink repo={repo} id={n.id} name={n.name} className="min-w-0 truncate text-[12.5px]" />
-          {n.type !== "CALLS" && <span className="rounded bg-white/5 px-1 text-[10px] text-fog">{n.type.toLowerCase()}</span>}
+          {n.type !== "CALLS" && <span className="rounded bg-white/5 px-1 text-[11px] text-fog">{n.type.toLowerCase()}</span>}
           <span className="ml-auto shrink-0 font-mono text-[10.5px] text-fog">
             {n.how ? (HOW[n.how] ?? n.how) : ""}
             {n.confidence !== undefined ? ` · ${pct(n.confidence)}` : ""}
@@ -39,7 +39,7 @@ function SymbolView({ repo, d }: { repo: string; d: SymbolDetail }) {
     const ns = new Map<string, GNode>();
     const add = (id: string, label: string, file: string, tone: string, group: string) =>
       ns.has(id) || ns.set(id, { id, label, sub: file, tone, group, emphasis: id === s.id });
-    add(s.id, s.qname, `${s.file}:${s.line}`, "bg-gold", "1");
+    add(s.id, s.qname, `${s.file}:${s.line}`, "bg-brand", "1");
     d.callers.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-signal-teal", "0"));
     d.callees.slice(0, 24).forEach((c) => add(c.id, c.name, `${c.file}:${c.line}`, "bg-smoke", "2"));
     const es: GEdge[] = [
@@ -238,6 +238,7 @@ function Candidates({ repo, items }: { repo: string; items: SymbolBrief[] }) {
 
 function Suggestions({ repo }: { repo: string }) {
   const q = useQuery(`overview:${repo}`, () => api.overview(repo));
+  const mod = useModKey();
   const central = q.data?.central.slice(0, 8) ?? [];
   const hot = q.data?.hotspots.slice(0, 6) ?? [];
   const chip = "inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-graphite px-3 py-1 font-mono text-xs text-mist transition-colors hover:border-smoke hover:text-paper";
@@ -245,16 +246,18 @@ function Suggestions({ repo }: { repo: string }) {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         <Search className="mr-1.5 inline size-4 align-[-3px] text-fog" aria-hidden />
-        Search above, or start from one of these. Press <kbd className="font-mono text-paper">⌘K</kbd> anywhere to jump.
+        Search above, or start from one of these. Press <kbd className="font-mono text-paper">{mod === "⌘" ? "⌘K" : "Ctrl K"}</kbd> anywhere to jump.
       </p>
-      {q.error ? null : !q.data ? (
+      {q.error ? (
+        <ErrorNote error={q.error} onRetry={q.reload} />
+      ) : !q.data ? (
         <Spinner label="Finding good starting points" />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Tile title="Load-bearing symbols" action={<span className="text-[11px] text-fog">most paths run through them</span>} bodyClassName="flex flex-wrap gap-2 p-3">
             {central.length ? central.map((c) => (
               <Link key={c.id} href={repoHref(repo, `/explore?ref=${encodeURIComponent(c.id)}`)} className={chip} title={`${c.file}:${c.line}`}>
-                <Code className="size-3.5 shrink-0 text-gold" aria-hidden /> {symName(c.qname)}
+                <Code className="size-3.5 shrink-0 text-brand" aria-hidden /> {symName(c.qname)}
               </Link>
             )) : <p className="text-sm text-muted-foreground">No call graph yet.</p>}
           </Tile>

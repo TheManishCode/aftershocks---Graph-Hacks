@@ -12,7 +12,10 @@
     "INHERITS": 0.8,
     "IMPLEMENTS": 0.7,
     "OVERRIDES": 1.0,
-    "DISPATCH": 0.6
+    "DISPATCH": 0.6,
+    "COVERS": 1.0,
+    "READ": 0.5,
+    "COVERS_STALE": 0.8
   },
   "override": {
     "_doc": "Seed weight for a method overriding a changed base method, by change kind. A body change does not reach overrides (they replace the body); a signature change is checked against the override's own arity when the new arity is known.",

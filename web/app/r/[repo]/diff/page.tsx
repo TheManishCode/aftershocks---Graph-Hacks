@@ -5,6 +5,7 @@ import { useState } from "react";
 import { GitDiff } from "@/components/icons";
 import { ImpactView } from "@/components/impact-view";
 import { CopyButton, Empty, ErrorNote, FileLink, Page, PageHeader, Receipts, Spinner, SymLink, Tile } from "@/components/kit";
+import { repoHref } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,13 +47,13 @@ export default function DiffPage() {
       >
         <div className="flex-1">
           <Label htmlFor="rev" className="mb-1.5 text-xs text-fog">
-            Head revision <span className="text-ash">(the &ldquo;after&rdquo;; the indexed commit is the &ldquo;before&rdquo;; blank = working tree)</span>
+            Head revision <span className="text-fog">(the &ldquo;after&rdquo;; the indexed commit is the &ldquo;before&rdquo;; blank = working tree)</span>
           </Label>
           <Input id="rev" value={rev} onChange={(e) => setRev(e.target.value)} placeholder="a PR branch or sha" className="font-mono text-sm" spellCheck={false} />
         </div>
         <label className="flex items-center gap-2 pb-2 text-xs text-fog">
           Depth
-          <input type="range" min={1} max={6} value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="w-24 accent-[var(--color-gold)]" />
+          <input type="range" min={1} max={6} value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="w-24 accent-[var(--color-brand)]" />
           <span className="w-4 font-mono text-paper">{depth}</span>
         </label>
         <Button type="submit" disabled={run.loading}>
@@ -120,7 +121,7 @@ export default function DiffPage() {
               )}
             </Tile>
           </div>
-          {d.impact ? <ImpactView repo={repo} data={d.impact} /> : <Empty title="Nothing existing was modified">Only additions: nothing in the graph depends on them yet.</Empty>}
+          {d.impact ? <ImpactView repo={repo} data={d.impact} runHref={`${repoHref(repo, "/tests")}?${new URLSearchParams(rev.trim() ? { mode: "diff", rev: rev.trim() } : { mode: "diff" })}`} /> : <Empty title="Nothing existing was modified">Only additions: nothing in the graph depends on them yet.</Empty>}
         </div>
       ) : (
         <Empty title="Analyze a change set" icon={<GitDiff className="size-6" />}>

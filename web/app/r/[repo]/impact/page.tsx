@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Zap } from "@/components/icons";
 import { ImpactView } from "@/components/impact-view";
 import { Empty, ErrorNote, Page, PageHeader, Spinner } from "@/components/kit";
+import { repoHref } from "@/components/shell/nav";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -86,7 +87,7 @@ export default function ImpactPage() {
               max={6}
               value={depth}
               onChange={(e) => setDepth(Number(e.target.value))}
-              className="w-24 accent-[var(--color-gold)]"
+              className="w-24 accent-[var(--color-brand)]"
               aria-valuetext={`${depth} hops`}
             />
             <span className="w-4 font-mono text-paper">{depth}</span>
@@ -107,6 +108,7 @@ export default function ImpactPage() {
           <ImpactView
             repo={repo}
             data={run.data}
+            runHref={`${repoHref(repo, "/tests")}?${new URLSearchParams([["mode", "targets"], ...targets.map((t) => ["t", t])])}`}
             onPick={(ref, id) => {
               const t = targets.map((x) => (x === ref ? id : x));
               setTargets(t);

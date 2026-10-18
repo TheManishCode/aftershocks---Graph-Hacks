@@ -54,7 +54,7 @@ function IndexForm({ onStarted }: { onStarted: (repo: string, after: number) => 
         </div>
         <div className="md:w-44">
           <Label htmlFor="name" className="mb-1.5 text-xs text-fog">
-            Name <span className="text-ash">(optional)</span>
+            Name <span className="text-fog">(optional)</span>
           </Label>
           <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="from the folder" className="font-mono text-sm" />
         </div>
@@ -104,7 +104,7 @@ function RepoCard({ repo, onDropped }: { repo: Repo; onDropped: () => void }) {
           </div>
         </div>
         {repo.indexing ? (
-          <span className="ml-auto rounded-full bg-gold/10 px-2 py-0.5 text-[11px] text-gold">indexing</span>
+          <span className="ml-auto rounded-full bg-brand/10 px-2 py-0.5 text-[11px] text-brand">indexing</span>
         ) : (
           <Button
             variant="ghost"
@@ -127,7 +127,7 @@ function RepoCard({ repo, onDropped }: { repo: Repo; onDropped: () => void }) {
           ] as const
         ).map(([k, v]) => (
           <div key={k}>
-            <dt className="text-[10px] tracking-[0.08em] text-fog uppercase">{k}</dt>
+            <dt className="text-[11px] tracking-[0.08em] text-fog uppercase">{k}</dt>
             <dd className="font-mono text-lg text-paper tabular-nums">{num(v)}</dd>
           </div>
         ))}
@@ -137,7 +137,7 @@ function RepoCard({ repo, onDropped }: { repo: Repo; onDropped: () => void }) {
           <span>call sites resolved</span>
           <span className="font-mono">{pct(repo.resolution_rate)}</span>
         </div>
-        <Meter value={repo.resolution_rate ?? 0} barClassName="bg-gold/80" />
+        <Meter value={repo.resolution_rate ?? 0} barClassName="bg-brand/80" />
       </div>
       <div className="mt-4 flex items-center gap-1 text-xs text-fog group-hover:text-mist">
         Open <ArrowRight className="size-3.5" />
@@ -161,8 +161,8 @@ export default function Home() {
   return (
     <Page className="max-w-[1200px]">
       <section className="relative mb-10 overflow-hidden rounded-xl border border-border bg-grid px-6 py-12 md:px-10 md:py-16">
-        <div className="pointer-events-none absolute -top-32 -right-24 size-96 rounded-full bg-gold/5 blur-3xl" aria-hidden />
-        <p className="mb-3 font-mono text-[11px] tracking-[0.14em] text-gold uppercase">Code dependency graph</p>
+        <div className="pointer-events-none absolute -top-32 -right-24 size-96 rounded-full bg-brand/5 blur-3xl" aria-hidden />
+        <p className="mb-3 font-mono text-[11px] tracking-[0.14em] text-brand uppercase">Code dependency graph</p>
         <h1 className="max-w-3xl text-[44px] leading-[1.02] md:text-[60px]">What breaks if I change this?</h1>
         <p className="mt-4 max-w-2xl text-body-sm text-muted-foreground">
           Aftershock parses a repository into a FalkorDB graph of files, symbols, calls, inheritance, imports and git
@@ -173,8 +173,8 @@ export default function Home() {
           {STEPS.map(([Icon, title, body], i) => (
             <li key={title} className="rounded-lg border border-border bg-background/60 p-4 backdrop-blur-sm">
               <div className="mb-2 flex items-center gap-2 text-sm text-paper">
-                <span className="font-mono text-[11px] text-gold">{i + 1}</span>
-                <Icon className="size-4 text-gold" aria-hidden /> {title}
+                <span className="font-mono text-[11px] text-brand">{i + 1}</span>
+                <Icon className="size-4 text-brand" aria-hidden /> {title}
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">{body}</p>
             </li>

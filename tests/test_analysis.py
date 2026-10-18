@@ -76,7 +76,7 @@ def test_culprit_reach_follows_dispatch_into_overrides(mini):
     from aftershock.analysis.culprit import _forward
     from aftershock.graph import get_store
 
-    seen = _forward(get_store().repo(mini), "shop/service.py::run_job", 3)
+    seen = _forward(get_store().repo(mini), ["shop/service.py::run_job"], 3)["shop/service.py::run_job"]
     assert seen["shop/service.py::ReportJob.run"][1]["type"] == "DISPATCH"
 
 

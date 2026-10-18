@@ -46,7 +46,7 @@ function StepRow({ s }: { s: Step }) {
     <li className="text-xs">
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-white/[0.03]" aria-expanded={open}>
         {!s.done ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-gold" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-brand" />
         ) : s.error ? (
           <CircleAlert className="size-3.5 shrink-0 text-coral-red" />
         ) : (
@@ -73,7 +73,7 @@ function TurnView({ t }: { t: Turn }) {
       <div className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-graphite bg-obsidian px-4 py-2.5 text-sm text-paper">{t.q}</div>
       <div className="rounded-xl border border-border bg-card/50 p-4">
         <div className="mb-3 flex items-center gap-2 text-[11px] text-fog">
-          {t.mode === "claude" ? <Sparkles className="size-3.5 text-gold" /> : <Terminal className="size-3.5" />}
+          {t.mode === "claude" ? <Sparkles className="size-3.5 text-brand" /> : <Terminal className="size-3.5" />}
           {t.mode === "claude" ? (
             <span>
               Claude agent <span className="font-mono">{t.model}</span>

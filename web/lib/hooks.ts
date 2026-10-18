@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ApiError } from "./api";
 
@@ -91,4 +91,28 @@ export function useDebounced<T>(value: T, ms = 180): T {
     return () => clearTimeout(t);
   }, [value, ms]);
   return v;
+}
+
+/** A CSS media query's live result; false on the server and before hydration. */
+export function useMedia(query: string): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(query);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
+}
+
+const isApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+
+/** The shortcut modifier label for this OS: ⌘ on Apple devices, Ctrl elsewhere (Ctrl until hydrated). */
+export function useModKey(): string {
+  return useSyncExternalStore(
+    () => () => {},
+    () => (isApple() ? "⌘" : "Ctrl"),
+    () => "Ctrl",
+  );
 }

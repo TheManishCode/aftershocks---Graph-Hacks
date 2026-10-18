@@ -212,13 +212,75 @@ def select_tests(repo: str, targets: list[str] | None = None, rev: str | None = 
     """The tests that statically reach a change, ranked by how directly. From targets, or from the current diff."""
     res = diff_impact(repo, rev) if diff_mode or not targets else {"impact": impact_of(repo, targets or [], "signature")}
     imp = res.get("impact") or {}
+    own = _changed_tests(res, imp)
     if not imp or imp.get("error"):
+        if own and not imp.get("error"):  # only tests changed (or were added): run exactly those
+            return {"tests": own, "files": sorted({t["file"] for t in own}), "untested_seeds": [], "seed_ids": [],
+                    "runtime_tests": 0, "note": "Only tests changed; running the changed tests."}
         return {"tests": [], "files": [], "note": (imp or {}).get("error") or "no changes detected"}
-    tests = [{k: t[k] for k in ("id", "name", "file", "line", "p", "hop")} for t in imp["tests"]]
+    tests = [{k: t.get(k) for k in ("id", "name", "file", "line", "p", "hop", "runtime")} for t in imp["tests"]]
+    # Impact drops anything under min_p, which is right for "what will probably break" but wrong for "what to run":
+    # a test that reaches the change through a long or dispatch-heavy chain must still run. Add those by plain
+    # reverse reachability, ranked after the probable ones.
+    seed_ids = [s["id"] for s in imp.get("seeds", [])]
+    if seed_ids:
+        g = _graph(repo)
+        have = {t["id"] for t in tests}
+        reach = set().union(*culprit._tests_reaching(g, seed_ids, get_settings().max_depth).values()) - have
+        for i in range(0, len(extra := sorted(reach)), 1000):
+            for r in g.ro("symbols_by_ids", {"ids": extra[i : i + 1000]}):
+                s = r["symbol"]
+                tests.append({"id": s["id"], "name": s.get("name"), "file": s.get("file"), "line": s.get("line"),
+                              "p": 0.0, "hop": None, "runtime": False, "reach": True})
+    have = {t["id"] for t in tests}
+    tests[:0] = [t for t in own if t["id"] not in have]
     files = sorted({t["file"] for t in tests})
+    if imp.get("runtime_tests"):
+        note = (f"Static reachability plus recorded per-test coverage ({imp['runtime_tests']} tests ran the changed "
+                "code when coverage was recorded). Re-record after large changes: `aftershock coverage <repo>`.")
+    else:
+        note = ("Static reachability: a test that reaches the change through a resolved call/inherit edge. Tests that "
+                "reach it only via dynamic dispatch, fixtures or config are not seen; record per-test coverage with "
+                "`aftershock coverage <repo>` to add them.")
     return {"tests": tests, "files": files, "untested_seeds": [s["name"] for s in imp["untested_seeds"]],
-            "note": "Static reachability: a test that reaches the change through a resolved call/inherit edge. "
-                    "Tests that reach it only via dynamic dispatch, fixtures or config are not seen."}
+            "seed_ids": seed_ids, "runtime_tests": imp.get("runtime_tests", 0),
+            "note": note}
+
+
+def wider_tests(repo: str, seed_ids: list[str], exclude: list[str]) -> list[str]:
+    """Tests that reach the seeds only by a longer chain than select_tests follows (up to culprit.CHANGED_DEPTH)."""
+    if not seed_ids:
+        return []
+    reach = set().union(*culprit._tests_reaching(_graph(repo), seed_ids, culprit.CHANGED_DEPTH).values())
+    return sorted(reach - set(exclude))
+
+
+_TEST_FILE = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$|(^|/)tests?/[^/]*\.py$")
+
+
+def _changed_tests(res: dict, imp: dict) -> list[dict]:
+    """Tests that were themselves edited or added (testmon's baseline): impact lists only what *reaches* a seed, and
+    added symbols are never seeds. A deleted test has nothing left to run; a renamed one runs under its new id."""
+    changed = (res.get("changes") or {}).get("symbols")
+    if changed is None:  # targets mode: the targets themselves
+        changed = [{"id": s["id"], "change": "target", "line": s.get("line")} for s in imp.get("seeds", [])]
+    out: dict[str, dict] = {}
+    for c in changed:
+        if c["change"] == "delete":
+            continue
+        sid = c.get("renamed_to") or c["id"]
+        file, _, qname = sid.partition("::")
+        if _looks_like_test(file, qname):
+            out.setdefault(sid, {"id": sid, "name": re.sub(r"#\d+$", "", qname.rsplit(".", 1)[-1]), "file": file,
+                                 "line": c.get("line"), "p": 1.0, "hop": 0, "runtime": False, "changed": c["change"]})
+    return list(out.values())
+
+
+def _looks_like_test(file: str, qname: str) -> bool:
+    """A pytest test function or method by pytest's default discovery rules (Python only)."""
+    leaf = re.sub(r"#\d+$", "", qname.rsplit(".", 1)[-1])
+    return bool(_TEST_FILE.search(file)) and leaf.startswith("test") and (
+        "." not in qname or qname.split(".", 1)[0].startswith("Test"))
 
 
 def explain_path(repo: str, source: str, target: str, depth: int = 8) -> dict:
@@ -318,3 +380,94 @@ def cypher(repo: str, query: str, params: dict | None = None) -> dict:
     except QueryRejected as e:
         raise ToolError(str(e)) from e
     return {"rows": rows, "count": len(rows)}
+
+
+# ---- test libraries and recorded runs (D25) --------------------------------------------------------------------------
+
+LIB_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
+RUN_ID = re.compile(r"^[0-9a-f]{8,24}$")
+
+
+def test_libraries(repo: str) -> dict:
+    from .ingest.discover import LIB_PREFIX, libraries
+
+    g = _graph(repo)
+    libs = libraries(_repo_props(g))
+    files = [r["path"] for r in g.ro("file_index") if r["path"].startswith(LIB_PREFIX)]
+    tests = [t for t in g.ro("tests") if t["file"].startswith(LIB_PREFIX)]
+    return {"libraries": [{"name": n, "path": d, "on_disk": Path(d).is_dir(),
+                           "files": sum(f.startswith(f"{LIB_PREFIX}{n}/") for f in files),
+                           "tests": sum(t["file"].startswith(f"{LIB_PREFIX}{n}/") for t in tests)}
+                          for n, d in sorted(libs.items())]}
+
+
+def library_set(repo: str, name: str, path: str | None) -> dict:
+    """Register (`path`) or forget (None) a directory of pytest tests that lives outside the repo. Re-index after."""
+    import json
+
+    from .ingest.discover import libraries
+
+    if not isinstance(name, str) or not LIB_NAME.match(name):
+        raise ToolError("library names are 1-40 letters, digits, '-' or '_'")
+    g = _graph(repo)
+    props = _repo_props(g)
+    libs = libraries(props)
+    if path is None:
+        if libs.pop(name, None) is None:
+            raise NotFound(f"no test library {name!r} on {repo}")
+    else:
+        d = allowed_path(path)
+        root = Path(props.get("root") or "").resolve()
+        if d == root or root in d.parents or d in root.parents:
+            raise ToolError("a test library must be a directory outside the repo (tests inside it are indexed already)")
+        libs[name] = str(d)
+    g.rw("upsert_repo", {"name": repo, "props": {"libraries": json.dumps(libs)}})
+    return {"repo": repo, "libraries": libs, "note": "re-index the repo to pick up the change"}
+
+
+def test_runs(repo: str, limit: int = 20) -> dict:
+    from .runtime import runs
+
+    return {"runs": runs.list_runs(_graph(repo), limit)}
+
+
+def run_detail(repo: str, run_id: str) -> dict:
+    from .runtime import runs
+
+    if not isinstance(run_id, str) or not RUN_ID.match(run_id):
+        raise ToolError(f"invalid run id {run_id!r}")
+    out = runs.detail(_graph(repo), run_id)
+    if out is None:
+        raise NotFound(f"no recorded run {run_id!r}")
+    out["next"] = next_steps(out)
+    return out
+
+
+def next_steps(run: dict) -> list[dict]:
+    """What the graph suggests doing next with a recorded run: concrete tool calls with the reason for each, so an
+    agent (or a person) picks the right tool from the evidence rather than by guessing (D26)."""
+    sus = ((run.get("culprits") or {}).get("suspects") or [])
+    fails = run.get("failures") or []
+    if not fails:
+        return []
+    top, test = (sus[0] if sus else None), fails[0]["test"]
+    out = []
+    if top:
+        out.append({"tool": "explain_path", "args": {"source": test, "target": top["id"]},
+                    "why": f"how `{test.split('::')[-1]}` reaches the top suspect, edge by edge"})
+        out.append({"tool": "impact", "args": {"targets": [top["id"]]},
+                    "why": "what else depends on the suspect, i.e. what a fix there could break"})
+    flaky = [t for t, h in (run.get("history") or {}).items() if 0 < h["failed"] < h["runs"]]
+    if flaky:
+        out.append({"tool": "cypher", "args": {"query": "MATCH (r:TestRun)-[e:RAN]->(t:Symbol {id: $t}) RETURN r.id, "
+                                                        "r.started, e.outcome ORDER BY r.started DESC LIMIT 20",
+                                               "params": {"t": flaky[0]}},
+                    "why": f"`{flaky[0].split('::')[-1]}` both passed and failed before: check for flakiness"})
+    if not run.get("measured"):
+        out.append({"tool": "run_tests", "args": {"mode": "targets", "targets": [top["id"]] if top else [test]},
+                    "why": "this run was not measured; a measured re-run ranks suspects on executed code",
+                    "needs": "AFTERSHOCK_ALLOW_RUN on a local stdio server"})
+    if sus and not run.get("retries"):
+        out.append({"tool": "heal", "args": {"run_id": run["id"]}, "why": "let Claude fix the top suspect, re-verified",
+                    "needs": "AFTERSHOCK_ALLOW_RUN on a local stdio server"})
+    return out

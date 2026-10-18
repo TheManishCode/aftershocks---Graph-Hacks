@@ -25,10 +25,11 @@ import builtins
 import json
 import posixpath
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .model import MODULE, Def, FileFacts, sym_id
+from .model import MODULE, Call, Def, FileFacts, sym_id
 from .parse import JSLIKE
 
 CONFIDENCE = {
@@ -66,7 +67,8 @@ class Edge:
     confidence: float
     lines: list[int] = field(default_factory=list)
     args: list[int] = field(default_factory=list)  # argument counts seen at the call sites (CALLS only)
-    kind: str = "call"  # call | new
+    kind: str = "call"  # call | new | ref | jsx | read | dunder | prop
+    names: list[str] = field(default_factory=list)  # kind read: the module-level values read through this edge
 
     @property
     def count(self) -> int:
@@ -199,6 +201,20 @@ class Resolver:
                         self.by_name[d.name].append(d)
                 elif d.kind == "method":
                     self.methods_by_name[d.name].append(d)
+        # JS objects are often closures gathered into a literal (`const api = { getState, setState }; return api`):
+        # those functions are that object's methods wherever it travels, typed only by an interface (`api: StoreApi`).
+        for f in files:
+            if f.lang not in JSLIKE:
+                continue
+            for d in f.defs:
+                for typ in d.types.values():
+                    if not typ.startswith("obj:"):
+                        continue
+                    for entry in typ[4:].split(";"):
+                        k, _, ref = entry.partition("=")
+                        fn = self.defs[f.path].get(f"{d.qname}.{ref}") or self.top[f.path].get(ref) if re.fullmatch(r"\w+", ref) else None
+                        if fn is not None and fn.kind == "function" and fn not in self.methods_by_name[k]:
+                            self.methods_by_name[k].append(fn)
         # Rust impls and Go methods put `Type.method` in files that may not define `Type`; index classes by name too.
         self.members: dict[str, dict[str, Def]] = defaultdict(dict)  # "<path>::<Class>" -> member name -> def
         for f in files:
@@ -229,11 +245,16 @@ class Resolver:
         self._shapes: dict[tuple[str, str, str], Def | None] = {}
         self._shape_bases: dict[str, list[Def]] = {}
         self._callable: dict[str, Def] = {}  # shape id -> the function a call on it runs
+        # `@property` getters by (path, unnumbered qname): a later `@x.setter` is what plain lookups bind to.
+        self.getters: dict[tuple[str, str], Def] = {
+            (f.path, _unnumbered(d.qname)): d for f in files for d in f.defs
+            if d.kind == "method" and PROPERTY_DECOS & {x.rpartition(".")[2] for x in d.decorators}}
+        self.prop_names = {q.rpartition(".")[2] for _, q in self.getters}
 
     # ---- module lookup per language ------------------------------------------------------------------------------
     def _python_modules(self) -> dict[str, str]:
         mods: dict[str, str] = {}
-        suffix: dict[str, set[str]] = defaultdict(set)
+        suffix: dict[str, dict[str, int]] = defaultdict(dict)  # name -> {path: how many leading parts were dropped}
         for p, f in self.files.items():
             if f.lang != "python":
                 continue
@@ -246,10 +267,15 @@ class Resolver:
             mods[dotted] = p
             parts = dotted.split(".")
             for i in range(1, len(parts)):  # src.pkg.mod is importable as pkg.mod (src layout, nested roots)
-                suffix[".".join(parts[i:])].add(p)
-        for name, ps in suffix.items():
-            if name not in mods and len(ps) == 1:
-                mods[name] = next(iter(ps))
+                suffix[".".join(parts[i:])][p] = i
+        for name, ps in suffix.items():  # absolute `import typing` is the stdlib, never a package's own typing.py
+            if name in mods or name.split(".")[0] in sys.stdlib_module_names:
+                continue
+            # src/flask beats tests/test_apps/cliapp/inner1/inner2/flask.py: the shallowest root is the one on sys.path
+            best = min(ps.values())
+            top = [q for q, i in ps.items() if i == best]
+            if len(top) == 1:
+                mods[name] = top[0]
         return mods
 
     def py_module(self, path: str, module: str, level: int) -> str | None:
@@ -610,6 +636,8 @@ class Resolver:
             d = self.member(cls, name)
             if d is not None and ok(d):
                 return d, "inferred"
+            if cls.kind == "object":  # a literal we can see whole: a member it lacks is not some other object's method
+                return None
         if "()" in recv or "[]" in recv:
             return self._method_unique(name) if kinds is None else None
         # Class.method / Type::new on a class this file can see
@@ -682,6 +710,9 @@ class Resolver:
                     nxt, rest = rest[0], rest[1:]
                     d = self.lookup(targets, nxt.removesuffix("()"))
                     cur = self._result_type(d, depth) if d is not None and nxt.endswith("()") else None
+                elif rest[0].endswith("()"):  # Money.of("1.5").format(): a static/class method's declared result
+                    hit = self.resolve_name(path, caller, name, kinds=CLASSY)
+                    cur = hit[0] if hit else None
         return self._walk(cur, rest, depth)
 
     def _walk(self, cur: Def | None, rest: list[str], depth: int) -> Def | None:
@@ -810,9 +841,30 @@ class Resolver:
                 return self._expand(c.path, c.qname, c.types[name], depth)
         return None
 
+    def _union_members(self, path: str, caller: str, recv: str, name: str) -> list[Def]:
+        """`obj: A | B` (written, or from a return annotation): the `name` method of each member class that has one.
+        Empty unless the written type names at least two classes."""
+        w = self._written(path, caller, recv, 0)
+        parts = [x.strip() for x in _split_top(w[2], "|")] if w else []
+        parts = [x for x in parts if x and x not in _NONE]
+        if len(parts) < 2:
+            return []
+        out: list[Def] = []
+        for part in parts:
+            cls = self._type_def(w[0], w[1], part, 1)
+            m = self.member(cls, name) if cls is not None else None
+            if m is not None and all(m.id != o.id for o in out):
+                out.append(m)
+        return out
+
     def _expand(self, path: str, caller: str, typ: str, depth: int) -> tuple[str, str, str] | None:
         if typ.startswith("call:"):
             return self._written(path, caller, typ[5:] + "()", depth + 1)
+        if typ.startswith("part:"):  # a, b = f() with f() -> tuple[A, B]: b is written B
+            base, at, pos = typ[5:].rpartition("@")
+            w = self._written(path, caller, base, depth + 1) if at and pos.isdigit() else None
+            el = _nth(w[2], int(pos)) if w else ""
+            return (w[0], w[1], el) if el else None
         if typ.startswith(("iter:", "item:")):
             w = self._written(path, caller, typ[5:], depth + 1)
             return (w[0], w[1], _element(w[2], typ[:4])) if w else None
@@ -856,8 +908,9 @@ class Resolver:
         if typ.startswith("cb:"):  # create((set, get, api) => …): what the factory passes that parameter
             b = self._cb_binding(path, caller, typ)
             return self.type_of(b[0], b[1], b[2], depth + 1) if b else None
-        if typ.startswith("part:"):  # one name destructured out of a result: not typed
-            return None
+        if typ.startswith("part:"):  # one name destructured out of a result: typed only by a written tuple
+            w = self._expand(path, caller, typ, depth)
+            return self._type_def(w[0], w[1], w[2], depth + 1) if w else None
         if typ.startswith("prop:"):  # const { store } = make(): an attribute of what make() returns
             base, _, attr = typ[5:].rpartition(".")
             cls = self.type_of(path, caller, base, depth + 1)
@@ -891,7 +944,7 @@ class Resolver:
             assigned = self._var_type(path, caller, "assign:" + typ[3:])
             srcs = assigned.split(";") if assigned else []
         else:
-            for entry in typ[4:].split(";"):
+            for entry in filter(None, typ[4:].split(";")):
                 k, _, ref = entry.partition("=")
                 if k == "...":
                     srcs.append(ref)
@@ -1078,7 +1131,7 @@ class Resolver:
         if typ.startswith("call:"):
             return self._external_recv(path, caller, typ[5:] + "()", depth + 1)
         if typ.startswith(("part:", "prop:")):
-            base = typ[5:] if typ.startswith("part:") else typ[5:].rpartition(".")[0]
+            base = re.sub(r"@\d+$", "", typ[5:]) if typ.startswith("part:") else typ[5:].rpartition(".")[0]
             return self._external_recv(path, caller, base, depth + 1)
         if typ.startswith("cb:"):  # app.get("/", (req, res) => …): a callback a library calls gets library values
             callee = typ[3:].split("@")[0].rsplit("#", 2)[0].removesuffix("()")
@@ -1123,6 +1176,10 @@ class Resolver:
         for path in sorted(self.files):
             f = self.files[path]
             for c in f.calls:
+                alts: list[Def] = []
+                if c.kind in ("read", "dunder", "prop"):
+                    self._implicit(path, c, edges)
+                    continue
                 if f.lang == "python" and c.receiver is None and c.name in _PY_BUILTINS:
                     continue
                 if c.kind == "ref":
@@ -1140,8 +1197,19 @@ class Resolver:
                     if hit is None and c.kind == "call":
                         fn = self.callable_var(path, c.caller, c.name)
                         hit = (fn, "inferred") if fn is not None else None
+                    if hit is None and c.kind == "call" and f.lang == "python":  # handler(x), handler = Handler()
+                        cls = self.type_of(path, c.caller, c.name)
+                        fn = self.member(cls, "__call__") if cls is not None else None
+                        hit = (fn, "inferred") if fn is not None else None
                 else:
                     hit = self.resolve_attr(path, c.caller, c.receiver, c.name)
+                    if hit is None and c.kind == "call" and f.lang == "python":  # self.type(v), type: ParamType
+                        cls = self.type_of(path, c.caller, f"{c.receiver}.{c.name}")
+                        fn = self.member(cls, "__call__") if cls is not None else None
+                        hit = (fn, "inferred") if fn is not None else None
+                    if c.kind == "call" and f.lang == "python":
+                        alts = self._union_members(path, c.caller, c.receiver, c.name)
+                        hit = hit or ((alts[0], "inferred") if alts else None)
                 if hit is None:
                     if c.kind == "jsx":  # an unresolved <Foo/> is almost always a library component
                         continue
@@ -1163,7 +1231,23 @@ class Resolver:
                     e.how, e.confidence = how, CONFIDENCE[how]
                 e.lines.append(c.line)
                 e.args.append(c.args)
+                if kind == "new" and d.kind in CLASSY and c.kind != "ref":
+                    self._construct(src, d, how, c, edges)
+                for alt in alts:  # obj: A | B -> obj.m() may run A.m or B.m
+                    if alt.id not in (d.id, src):
+                        e = edges.setdefault((src, alt.id, "CALLS"), Edge(src, alt.id, "CALLS", "inferred",
+                                                                         CONFIDENCE["inferred"], kind="call"))
+                        e.lines.append(c.line)
+                        e.args.append(c.args)
             for d in f.defs:
+                if f.lang == "python" and d.kind in ("function", "method") and d.params:
+                    # pytest runs a parameter's fixture before the test (or fixture) that names it: that is a call
+                    # the source never spells, and the only way a test reaches code used just by fixture setup.
+                    for p in _param_names(d) - {"self", "cls"}:
+                        fx = self._fixture(path, d.qname, p)
+                        if fx is not None and fx.id != d.id:
+                            edges.setdefault((d.id, fx.id, "CALLS"), Edge(d.id, fx.id, "CALLS", "inferred",
+                                                                          CONFIDENCE["inferred"], lines=[d.line]))
                 if not d.bases:
                     continue
                 for raw in d.bases:
@@ -1185,6 +1269,71 @@ class Resolver:
                           file_links=sorted(self.file_links.values(), key=lambda fl: (fl.src, fl.dst)),
                           externals=dict(self.externals), unresolved=dict(unresolved), ambiguous=dict(ambiguous),
                           external=dict(external))
+
+    def _construct(self, src: str, cls: Def, how: str, c: Call, edges: dict[tuple[str, str, str], Edge]) -> None:
+        """`Foo(...)` / `new Foo()` runs Foo's constructor (its own or an inherited one): give it the caller too, so a
+        changed `__init__` reaches everyone who builds the class, and its arity is checked at those call sites."""
+        for name in ("__init__", "__new__", "__post_init__", "constructor"):
+            m = self.member(cls, name)
+            if m is None or m.id == src or m.kind != "method":
+                continue
+            e = edges.get((src, m.id, "CALLS"))
+            if e is None:
+                e = edges[(src, m.id, "CALLS")] = Edge(src, m.id, "CALLS", how, CONFIDENCE[how], kind="new")
+            e.lines.append(c.line)
+            e.args.append(c.args if name in ("__init__", "constructor", "__new__") else -1)
+
+    def _implicit(self, path: str, c: Call, edges: dict[tuple[str, str, str], Edge]) -> None:
+        """Calls the source never spells: a module-level value read by name (`read`), a protocol method the syntax runs
+        (`dunder`), a `@property` read (`prop`). Bound only by scoping, imports or a known receiver type; a miss is
+        neither unresolved nor external."""
+        src = sym_id(path, c.caller)
+        names: list[str] = []
+        if c.kind == "read":
+            home = self._value_home(path, c.name)
+            if home is None:
+                return
+            d, how, names = self.defs[home][MODULE], "local" if home == path else "import", [c.name]
+        else:
+            if c.kind == "prop" and c.name not in self.prop_names:
+                return
+            hit = self.resolve_attr(path, c.caller, c.receiver or "", c.name, kinds={"method"})
+            if hit is None or hit[1] not in ("self", "inferred"):
+                return
+            d, how = hit
+            if c.kind == "prop":
+                d = self.getters.get((d.path, _unnumbered(d.qname)))
+                if d is None:
+                    return
+        if d.id == src:
+            return
+        e = edges.get((src, d.id, "CALLS"))
+        if e is None:
+            e = edges[(src, d.id, "CALLS")] = Edge(src, d.id, "CALLS", how, CONFIDENCE[how], kind=c.kind)
+        e.lines.append(c.line)
+        if c.kind == "dunder":
+            e.args.append(-1)
+        for n in names:
+            if n not in e.names:
+                e.names.append(n)
+
+    def _value_home(self, path: str, name: str, seen: frozenset[str] = frozenset()) -> str | None:
+        """The file whose module-level value `name` (as seen from `path`) is, following imports and re-exports."""
+        if path in seen or path not in self.files:
+            return None
+        if name in self.top.get(path, {}):
+            return None  # a function or class: real CALLS / refs cover it
+        mod = self.defs[path].get(MODULE)
+        if mod is not None and name in mod.values:
+            return path
+        b = self.binds.get(path, {}).get(name)
+        if b is None or not b.symbol or "." in b.symbol:
+            return None
+        for p in b.paths:
+            home = self._value_home(p, b.symbol, seen | {path})
+            if home is not None:
+                return home
+        return None
 
     def _go_structural(self, edges: dict[tuple[str, str, str], Edge]) -> None:
         ifaces: list[tuple[Def, set[str]]] = []
@@ -1304,6 +1453,19 @@ def _element(t: str, which: str) -> str:
     if base in _MAPS and len(args) == 2:
         return args[1] if which == "item" else "" if base in ("Map", "ReadonlyMap", "WeakMap", "Record") else args[0]
     return ""
+
+
+def _nth(t: str, i: int) -> str:
+    """Position `i` of a written tuple type: tuple[A, B] -> B; tuple[A, ...] -> A; anything else -> ''."""
+    parts = [x.strip() for x in _split_top(t.strip().strip("'\""), "|")]
+    parts = [x for x in parts if x not in _NONE]
+    m = re.match(r"(?:typing\.)?(tuple|Tuple)\s*\[(.*)\]$", parts[0]) if len(parts) == 1 else None
+    if not m:
+        return ""
+    args = [a.strip() for a in _split_top(m.group(2), ",")]
+    if len(args) == 2 and args[1] == "...":
+        return args[0]
+    return args[i] if i < len(args) and "..." not in args else ""
 
 
 def _is_fixture(d: Def) -> bool:

@@ -1,18 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { AlertTriangle, ChevronDown, ChevronRight, GitDiff, TestTube, Users } from "@/components/icons";
+import Link from "next/link";
+
+import { AlertTriangle, ChevronDown, ChevronRight, GitDiff, Play, TestTube, Users } from "@/components/icons";
 import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
 import { CopyButton, Empty, FileLink, Meter, Receipts, Stat, SymLink, Tile } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import type { Impact, Impacted, Problem, Tier } from "@/lib/api";
-import { HOW, LEVEL_BG, LEVEL_TEXT, num, pct, relTime, splitId, symName, TIER_BG, TIER_TEXT } from "@/lib/format";
+import { HOW, LEVEL_BG, LEVEL_TEXT, num, pct, pytestNode, relTime, splitId, symName, TIER_BG, TIER_TEXT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const GRAPH_CAP = 60;
 const TIERS: Tier[] = ["definite", "likely", "possible"];
-const VERB: Record<string, string> = { CALLS: "calls", INHERITS: "inherits", IMPLEMENTS: "implements", OVERRIDES: "overrides", COCHANGE: "co-changes with" };
+const VERB: Record<string, string> = { CALLS: "calls", INHERITS: "inherits", IMPLEMENTS: "implements", OVERRIDES: "overrides", COCHANGE: "co-changes with", COVERS: "ran" };
 
 /** Why a symbol is impacted: the chain from the changed symbol, one resolved edge per step. */
 export function WhyChain({ repo, item }: { repo: string; item: Impacted }) {
@@ -74,7 +76,7 @@ export function ProblemList({ repo, problems, onPick }: { repo: string; problems
   );
 }
 
-function ImpactGraph({ data, onSelect, selected }: { data: Impact; onSelect: (id: string) => void; selected?: string }) {
+function ImpactGraph({ repo, data, onSelect, selected }: { repo: string; data: Impact; onSelect: (id: string) => void; selected?: string }) {
   const { nodes, edges, hidden } = useMemo(() => {
     const top = [...data.impacted].sort((a, b) => b.p - a.p).slice(0, GRAPH_CAP);
     const keep = new Set<string>(data.seeds.filter((s) => s.found).map((s) => s.id));
@@ -89,7 +91,7 @@ function ImpactGraph({ data, onSelect, selected }: { data: Impact; onSelect: (id
         id,
         label: qn || file,
         sub: `${file}${it ? ` · hop ${it.hop}` : ""}`,
-        tone: seed ? "bg-gold" : it ? TIER_BG[it.tier] : "bg-smoke",
+        tone: seed ? "bg-brand" : it ? TIER_BG[it.tier] : "bg-smoke",
         value: it?.p,
         badge: seed ? seed.change : it ? pct(it.p) : undefined,
         group: seed ? "0" : String(it?.hop ?? 9),
@@ -107,9 +109,10 @@ function ImpactGraph({ data, onSelect, selected }: { data: Impact; onSelect: (id
   return (
     <div>
       <GraphCanvas nodes={nodes} edges={edges} onSelect={onSelect} selected={selected} height={460} />
+      <Selection repo={repo} data={data} id={selected} />
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fog">
         <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-gold" /> changed
+          <span className="size-2 rounded-sm bg-brand" /> changed
         </span>
         {TIERS.map((t) => (
           <span key={t} className="flex items-center gap-1.5">
@@ -125,7 +128,7 @@ function ImpactGraph({ data, onSelect, selected }: { data: Impact; onSelect: (id
 
 function ImpactRow({ repo, it, open, onToggle }: { repo: string; it: Impacted; open: boolean; onToggle: () => void }) {
   return (
-    <li className={cn("rounded-lg border border-transparent", open && "border-graphite bg-white/[0.02]")}>
+    <li data-row={it.id} className={cn("scroll-mt-20 rounded-lg border border-transparent", open && "border-brand/40 bg-white/[0.02]")}>
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.03]" aria-expanded={open}>
         {open ? <ChevronDown className="size-3.5 shrink-0 text-fog" /> : <ChevronRight className="size-3.5 shrink-0 text-fog" />}
         <span className={cn("w-16 shrink-0 font-mono text-[11px]", TIER_TEXT[it.tier])}>{it.tier}</span>
@@ -152,12 +155,58 @@ function ImpactRow({ repo, it, open, onToggle }: { repo: string; it: Impacted; o
   );
 }
 
+/** What the clicked node is, right under the graph, so a click always answers in place (the row below may be off screen). */
+function Selection({ repo, data, id }: { repo: string; data: Impact; id?: string }) {
+  if (!id) return <p className="mt-2 text-[11px] text-fog">Click a node to see why it is impacted.</p>;
+  const it = data.impacted.find((x) => x.id === id);
+  const seed = data.seeds.find((s) => s.id === id);
+  const step = it?.path[0]; // paths run from the impacted symbol toward the change
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-brand/40 bg-brand/[0.04] px-3 py-2 text-xs" aria-live="polite">
+      <SymLink repo={repo} id={id} name={symName(splitId(id)[1] || id)} className="font-mono text-[13px]" />
+      {seed ? (
+        <span className="text-brand">changed · {seed.change}</span>
+      ) : it ? (
+        <>
+          <span className={TIER_TEXT[it.tier]}>
+            {it.tier} · {pct(it.p)}
+          </span>
+          <span className="text-fog">
+            hop {it.hop}
+            {step && ` · ${VERB[step.type] ?? step.type.toLowerCase()} ${symName(splitId(step.to)[1] || step.to)}`}
+          </span>
+          {it.verdict && <span className="text-paper">{it.verdict}</span>}
+        </>
+      ) : (
+        <span className="text-fog">on the path between the change and an impacted symbol</span>
+      )}
+    </div>
+  );
+}
+
 /** The full answer to "what breaks if I change this": risk, graph, ranked list with why-chains, tests, files, people. */
-export function ImpactView({ repo, data, onPick }: { repo: string; data: Impact; onPick?: (ref: string, id: string) => void }) {
+/** `runHref`: the Tests page link that runs exactly this selection (D18). */
+export function ImpactView({ repo, data, onPick, runHref }: { repo: string; data: Impact; onPick?: (ref: string, id: string) => void; runHref?: string }) {
   const [tier, setTier] = useState<Tier | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
   const [limit, setLimit] = useState(40);
+  const [jump, setJump] = useState<string | null>(null);
   const list = data.impacted.filter((x) => !x.is_test && (tier === "all" || x.tier === tier));
+  // a graph click opens that symbol's row: widen the filter and page size if needed, then bring the row into view
+  const pick = (id: string) => {
+    setOpen(id);
+    const it = data.impacted.find((x) => x.id === id);
+    if (!it || it.is_test) return;
+    const all = tier === "all" || it.tier === tier ? list : data.impacted.filter((x) => !x.is_test);
+    if (all !== list) setTier("all");
+    setLimit((l) => Math.max(l, all.indexOf(it) + 1));
+    setJump(id);
+  };
+  useEffect(() => {
+    if (!jump) return;
+    document.querySelector(`[data-row="${CSS.escape(jump)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    setJump(null);
+  }, [jump]);
   const level = data.risk.level;
   const c = data.risk.components;
 
@@ -212,7 +261,7 @@ export function ImpactView({ repo, data, onPick }: { repo: string; data: Impact;
         </Tile>
         <Tile title="Blast radius" bodyClassName="p-3">
           {data.impacted.length ? (
-            <ImpactGraph data={data} onSelect={(id) => setOpen(id)} selected={open ?? undefined} />
+            <ImpactGraph repo={repo} data={data} onSelect={pick} selected={open ?? undefined} />
           ) : (
             <Empty title="Nothing depends on this" icon={<GitDiff className="size-6" />}>
               No resolved caller, subclass or co-change partner was found within {data.max_depth} hops.
@@ -252,19 +301,48 @@ export function ImpactView({ repo, data, onPick }: { repo: string; data: Impact;
         </Tile>
 
         <div className="space-y-4">
-          <Tile title={`Tests to run · ${data.tests.length}`} bodyClassName="p-2">
+          <Tile
+            title={`Tests to run · ${data.tests.length}`}
+            bodyClassName="p-2"
+            action={
+              data.tests.length ? (
+                <div className="flex items-center gap-1.5">
+                  <CopyButton text={`pytest ${[...new Set(data.tests.map((t) => pytestNode(t.id)))].join(" ")}`} label="pytest" className="h-7" />
+                  {runHref && (
+                    <Button asChild size="sm" className="h-7">
+                      <Link href={runHref}>
+                        <Play className="size-3.5" /> Run
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              ) : undefined
+            }
+          >
+            {data.runtime_tests ? (
+              <p className="px-2 pb-1.5 text-[11px] text-fog">
+                {data.runtime_tests} found by recorded coverage: they ran this code, whether or not a static edge reaches it.
+              </p>
+            ) : null}
             {data.tests.length ? (
               <ul className="space-y-0.5">
                 {data.tests.slice(0, 30).map((t) => (
                   <li key={t.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs">
                     <TestTube className="size-3.5 shrink-0 text-signal-teal" aria-hidden />
                     <SymLink repo={repo} id={t.id} name={t.name} className="min-w-0 truncate text-[12px]" />
+                    {t.runtime && (
+                      <span className="shrink-0 rounded bg-signal-teal/10 px-1 text-[11px] text-signal-teal" title="This test executed the changed code when coverage was recorded">
+                        ran it
+                      </span>
+                    )}
                     <span className="ml-auto font-mono text-[11px] text-fog">{pct(t.p)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="p-2 text-sm text-muted-foreground">No test statically reaches this change.</p>
+              <p className="p-2 text-sm text-muted-foreground">
+                No test reaches this change. Record per-test coverage (<code className="font-mono">aftershock coverage {repo}</code>) to catch tests a static edge misses.
+              </p>
             )}
           </Tile>
 

@@ -234,6 +234,9 @@ def test_c(store):
         ("test_a", "Client.get", 4),  # conftest fixture one directory up, yielding a `with` binding
         ("test_a", "Store.save", 5),  # undeclared return read from the body
         ("TestS.test_b", "Store.save", 13),  # fixture defined on the test class
+        ("test_a", "client", 3),  # pytest runs the fixture a parameter names: test → fixture edge
+        ("TestS.test_b", "TestS.store", 12),
+        ("client", "Client.__enter__", 5),  # `with Client()` runs its __enter__ (a protocol method)
     }  # not: a generator's result (6), disagreeing returns (7), a class fixture outside its class (15)
 
 
@@ -608,3 +611,202 @@ def test_subsystems_sharing_a_directory_are_named_by_their_files():
     assert _name(["src/click/core.py", "tests/test_a.py", "tests/test_b.py", "tests/test_c.py"]) == "src/click"
 
     assert _hint(["src/middleware/persist.ts", "src/middleware/devtools.ts", "src/index.ts"]) == "devtools, persist +1"
+
+
+def test_constructors_protocol_methods_properties_and_module_values_get_callers():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [
+        parse_file("pkg/bag.py", b"""TIMEOUT = 5
+LIMIT = TIMEOUT * 2
+class Bag:
+    def __init__(self, items):
+        self.items = items
+    def __len__(self):
+        return len(self.items)
+    def __getitem__(self, i):
+        return self.items[i]
+    def __add__(self, other):
+        return Bag(self.items + other.items)
+    def __contains__(self, x):
+        return x in self.items
+    @property
+    def size(self):
+        return len(self)
+"""),
+        parse_file("pkg/use.py", b"""from pkg.bag import Bag, TIMEOUT
+def use(b: Bag, TIMEOUT_LOCAL=1):
+    n = Bag([1])
+    len(b)
+    b[0]
+    b + n
+    1 in b
+    b.size
+    return TIMEOUT
+def shadow(TIMEOUT):
+    return TIMEOUT
+def call(b: Bag):
+    return Bag([1], items=[2])
+"""),
+    ]
+    got = {(e.src.split("::")[1], e.dst.split("::")[1], e.kind) for e in resolve(files).edges
+           if e.src.startswith("pkg/use.py")}
+    assert {("use", "Bag.__init__", "new"), ("use", "Bag.__len__", "dunder"), ("use", "Bag.__getitem__", "dunder"),
+            ("use", "Bag.__add__", "dunder"), ("use", "Bag.__contains__", "dunder"),
+            ("use", "Bag.size", "prop"), ("use", "<module>", "read")} <= got, got
+    assert not any(src == "shadow" for src, _, _ in got)  # a parameter shadows the module value
+
+
+def test_keyword_call_sites_check_only_the_positional_upper_bound():
+    from aftershock.analysis.impact import Seed, _arity_verdict
+
+    s = Seed("a.py::f", "signature", min_args=2, max_args=2)
+    assert _arity_verdict(s, [-3])[0] is None  # f(1, b=2): a keyword may fill the second slot
+    assert _arity_verdict(s, [-5])[0] is True  # f(1, 2, 3, c=4): three positionals never fit two
+    assert _arity_verdict(s, [2, -3])[0] is None
+    assert _arity_verdict(s, [2])[0] is False
+
+
+def test_generic_bases_typed_attribute_calls_and_parametrized_params_resolve():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [
+        parse_file("pkg/types.py", b"""import typing as t
+class Base(t.Generic[t.Any]):
+    def __call__(self, v):
+        return self.convert(v)
+    def convert(self, v):
+        return self.clamp(v)
+    def clamp(self, v):
+        return v
+class Range(Base[int]):
+    def clamp(self, v):
+        return v + 1
+class Param:
+    def __init__(self, ty):
+        self.type: Base[t.Any] = ty
+    def cast(self, v):
+        return self.type(v)
+"""),
+        parse_file("tests/test_range.py", b"""import pytest
+from pkg import types
+@pytest.mark.parametrize(("ty", "v"), [(types.Range(), "1"), pytest.param(types.Range(), "2", id="two")])
+def test_range(ty, v):
+    assert ty.convert(v)
+@pytest.mark.parametrize("x", [types.Range(), 3])
+def test_mixed(x):
+    x.convert(1)
+"""),
+    ]
+    res = resolve(files)
+    got = {(e.src.split("::")[1], e.type, e.dst.split("::")[1]) for e in res.edges}
+    assert ("Range", "INHERITS", "Base") in got  # class Range(Base[int]): the subscript is the generic base
+    assert ("Range.clamp", "OVERRIDES", "Base.clamp") in got
+    assert ("Param.cast", "CALLS", "Base.__call__") in got  # self.type(v) with `type: Base[...]`
+    how = {e.src.split("::")[1]: e.how for e in res.edges if e.dst.endswith("Base.convert")}
+    assert how["test_range"] == "inferred"  # every parametrize row builds a Range
+    assert how.get("test_mixed") != "inferred"  # rows disagree: no type is guessed
+
+
+def test_tuple_return_parts_and_union_receivers_resolve_to_every_member():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [parse_file("pkg/complete.py", b"""class Command:
+    def shell_complete(self, ctx, incomplete):
+        return []
+class Parameter:
+    def shell_complete(self, ctx, incomplete):
+        return []
+class Ctx:
+    def close(self):
+        pass
+def _resolve(ctx, args) -> tuple[Command | Parameter, str]:
+    return Command(), ""
+def _pair() -> tuple[Ctx, int]:
+    return Ctx(), 1
+def get_completions(ctx, args):
+    obj, incomplete = _resolve(ctx, args)
+    return obj.shell_complete(ctx, incomplete)
+def closing():
+    c, n = _pair()
+    c.close()
+    *rest, last = _pair()
+    last.close()
+""")]
+    edges = {(e.src.split("::")[1], e.dst.split("::")[1]): e for e in resolve(files).edges if e.type == "CALLS"}
+    assert ("get_completions", "Command.shell_complete") in edges  # obj is tuple[Command | Parameter, str][0]
+    assert ("get_completions", "Parameter.shell_complete") in edges  # ... and a union: both members' methods
+    assert edges[("closing", "Ctx.close")].lines == [19]  # c is tuple[Ctx, int][0]; after *rest, `last` is not typed
+
+
+def test_annotations_are_not_operator_calls():
+    from aftershock.ingest.parse import parse_file
+
+    f = parse_file("m.py", b"""import typing as t
+def f(x: str | None = None, cb: t.Callable[[int], str] | None = None) -> t.Any:
+    y: int | None = x | 2
+    return x[0]
+""")
+    assert sorted((c.receiver, c.name) for c in f.calls if c.kind == "dunder") == [("x", "__getitem__"), ("x", "__or__")]
+
+
+def test_absolute_stdlib_import_is_not_a_same_named_package_module():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [
+        parse_file("src/pkg/__init__.py", b""),
+        parse_file("src/pkg/typing.py", b"def TypeVar(name):\n    return name\n"),
+        parse_file("src/pkg/helpers.py", b"def helper():\n    return 1\n"),
+        parse_file("src/pkg/app.py", b"""import typing as t
+import helpers
+T = t.TypeVar("T")
+def f():
+    return helpers.helper()
+"""),
+    ]
+    edges = {(e.src.split("::")[0], e.dst) for e in resolve(files).edges if e.type == "CALLS"}
+    assert not any(dst.startswith("src/pkg/typing.py") for _, dst in edges)  # flask/typing.py is not `typing`
+    assert ("src/pkg/app.py", "src/pkg/helpers.py::helper") in edges  # a non-stdlib suffix still resolves
+
+
+def test_closures_gathered_into_an_object_are_its_methods_wherever_it_goes():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [
+        parse_file("src/vanilla.ts", b"""export interface StoreApi { getState: () => number }
+export const createStore = () => {
+  const getState = () => 1
+  const api = { getState }
+  return api
+}
+"""),
+        parse_file("src/middleware.ts", b"""import type { StoreApi } from './vanilla'
+export const devtools = (api: StoreApi) => {
+  api.getState()
+  const known = { n: 1 }
+  known.getState()
+}
+"""),
+    ]
+    got = {(e.dst.split("::")[1], ln) for e in resolve(files).edges if e.src.startswith("src/middleware") for ln in e.lines}
+    assert ("createStore.getState", 3) in got  # api is only an interface here; the closure is the one implementation
+    assert not any(ln == 5 for _, ln in got)  # a literal we can see has no getState: no edge
+
+
+def test_a_deep_same_named_module_does_not_hide_the_package():
+    from aftershock.ingest.parse import parse_file
+    from aftershock.ingest.resolve import resolve
+
+    files = [
+        parse_file("src/pkg/__init__.py", b"from .bp import Blueprint as Blueprint\n"),
+        parse_file("src/pkg/bp.py", b"class Blueprint:\n    def route(self, r):\n        return r\n"),
+        parse_file("tests/apps/cli/inner/pkg.py", b"def app():\n    return 1\n"),  # flask's tests ship a flask.py
+        parse_file("tests/test_bp.py", b"import pkg\ndef test_it():\n    pkg.Blueprint().route('/')\n"),
+    ]
+    edges = {e.dst for e in resolve(files).edges if e.type == "CALLS" and e.src.startswith("tests/test_bp.py")}
+    assert {"src/pkg/bp.py::Blueprint", "src/pkg/bp.py::Blueprint.route"} <= edges

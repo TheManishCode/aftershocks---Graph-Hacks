@@ -1,0 +1,173 @@
+# Hand-written scenarios on testlab/repos/ledger (Python, 19 tests). Each one breaks or changes the code in a way a
+# reviewer would recognise, and states what Aftershock must conclude. `failing` is the exact set of test functions
+# the full suite fails after the change: the runner checks that first (`truth`), so a wrong scenario shows up as a
+# scenario bug, not as a product result.
+
+repo = "ledger"
+description = "Banking ledger: cross-module calls, a class hierarchy with overrides, pytest fixtures, a context manager."
+run = true
+
+[[scenario]]
+id = "withdraw-signature"
+title = "A new required argument on Account.withdraw"
+why = "Signature change: every caller that wasn't updated breaks, two modules away from the edit."
+[[scenario.edit]]
+file = "ledger/accounts.py"
+find = 'def withdraw(self, amount: Money, memo: str = "withdrawal") -> None:'
+replace = 'def withdraw(self, amount: Money, memo: str, *, approved_by: str) -> None:'
+[scenario.expect]
+changes = ["signature:ledger/accounts.py::Account.withdraw"]
+impacted = ["ledger/bank.py::Bank.transfer", "ledger/bank.py::Bank.month_end"]
+not_impacted = ["ledger/report.py::split_bill"]
+failing = [
+  "tests/test_accounts.py::test_deposit_then_withdraw",
+  "tests/test_accounts.py::test_overdraw_is_refused",
+  "tests/test_bank.py::test_transfer_moves_money",
+  "tests/test_bank.py::test_failed_transfer_changes_nothing",
+  "tests/test_bank.py::test_month_end_charges_fees_and_pays_interest",
+  "tests/test_report.py::test_statement_lists_entries_and_balance",
+  "tests/test_report.py::test_journal_records_net_change",
+]
+culprit = "ledger/accounts.py::Account.withdraw"
+culprit_top = 1
+
+[[scenario]]
+id = "format-rename"
+title = "Money.format renamed to render, callers left behind"
+why = "Rename detection: identical body under a new name breaks every caller of the old one, including error paths."
+[[scenario.edit]]
+file = "ledger/money.py"
+find = "def format(self) -> str:"
+replace = "def render(self) -> str:"
+[scenario.expect]
+changes = ["rename:ledger/money.py::Money.format"]
+impacted = ["ledger/report.py::statement", "ledger/report.py::split_bill", "ledger/accounts.py::Account.withdraw"]
+failing = [
+  "tests/test_money.py::test_parse_and_format",
+  "tests/test_accounts.py::test_overdraw_is_refused",
+  "tests/test_bank.py::test_failed_transfer_changes_nothing",
+  "tests/test_report.py::test_statement_lists_entries_and_balance",
+  "tests/test_report.py::test_split_bill",
+]
+culprit = "ledger/money.py::Money.format"
+culprit_top = 1
+
+[[scenario]]
+id = "override-tiers-swapped"
+title = "TieredRate.rate returns the tiers the wrong way round"
+why = "Dispatch: nothing calls TieredRate.rate by name; it runs through InterestPolicy.apply's self.rate()."
+[[scenario.edit]]
+file = "ledger/interest.py"
+find = """        if account.balance.cents >= self.threshold:
+            return self.high
+        return self.low"""
+replace = """        if account.balance.cents >= self.threshold:
+            return self.low
+        return self.high"""
+[scenario.expect]
+changes = ["body:ledger/interest.py::TieredRate.rate"]
+impacted = ["ledger/interest.py::InterestPolicy.apply", "ledger/bank.py::Bank.month_end"]
+failing = [
+  "tests/test_interest.py::test_tiered_rate_switches_at_threshold",
+  "tests/test_bank.py::test_month_end_charges_fees_and_pays_interest",
+]
+culprit = "ledger/interest.py::TieredRate.rate"
+culprit_top = 1
+
+[[scenario]]
+id = "open-account-ids"
+title = "Account numbers lose a digit"
+why = "Fixture-only reach: tests get their bank from a conftest fixture, so only fixture setup calls open_account."
+[[scenario.edit]]
+file = "ledger/bank.py"
+find = 'acct = Account(id=f"A{self._next:04d}", owner=owner, kind=kind)'
+replace = 'acct = Account(id=f"A{self._next:03d}", owner=owner, kind=kind)'
+[scenario.expect]
+changes = ["body:ledger/bank.py::Bank.open_account"]
+failing = [
+  "tests/test_bank.py::test_open_numbers_accounts",
+  "tests/test_bank.py::test_transfer_moves_money",
+  "tests/test_bank.py::test_failed_transfer_changes_nothing",
+  "tests/test_bank.py::test_month_end_charges_fees_and_pays_interest",
+  "tests/test_report.py::test_journal_records_net_change",
+]
+culprit = "ledger/bank.py::Bank.open_account"
+culprit_top = 3
+
+[[scenario]]
+id = "journal-record"
+title = "Journal numbers its lines from zero"
+why = "Context-manager binding: `with Journal(bank) as j: j.record(...)` resolves through __enter__."
+[[scenario.edit]]
+file = "ledger/audit.py"
+find = 'self.lines.append(f"{len(self.lines) + 1}. {what}")'
+replace = 'self.lines.append(f"{len(self.lines)}. {what}")'
+[scenario.expect]
+changes = ["body:ledger/audit.py::Journal.record"]
+failing = ["tests/test_report.py::test_journal_records_net_change"]
+culprit = "ledger/audit.py::Journal.record"
+culprit_top = 1
+
+[[scenario]]
+id = "allocate-off-by-one"
+title = "Money.allocate hands the spare cent to one part too many"
+why = "Attribute typing: report.split_bill reaches it as account.balance.allocate(...)."
+[[scenario.edit]]
+file = "ledger/money.py"
+find = "base + (1 if i < extra else 0)"
+replace = "base + (1 if i <= extra else 0)"
+[scenario.expect]
+changes = ["body:ledger/money.py::Money.allocate"]
+impacted = ["ledger/report.py::split_bill"]
+failing = ["tests/test_money.py::test_allocate_sums_exactly", "tests/test_report.py::test_split_bill"]
+culprit = "ledger/money.py::Money.allocate"
+culprit_top = 1
+
+[[scenario]]
+id = "parse-one-digit-cents"
+title = "Money.of reads '1234.5' as 5 cents instead of 50"
+why = "A widely used function with one failing test: culprit ranking must still put it near the top."
+[[scenario.edit]]
+file = "ledger/money.py"
+find = 'int((frac + "00")[:2])'
+replace = 'int(frac or "0")'
+[scenario.expect]
+changes = ["body:ledger/money.py::Money.of"]
+failing = ["tests/test_money.py::test_parse_and_format"]
+culprit = "ledger/money.py::Money.of"
+culprit_top = 3
+
+[[scenario]]
+id = "fee-refactor-safe"
+title = "monthly_fee rewritten with early return, same behaviour"
+why = "No false alarm: the change is selected and run, and nothing fails."
+[[scenario.edit]]
+file = "ledger/fees.py"
+find = """    fee = FEES.get(account.kind, 0)
+    if account.balance.cents >= WAIVE_AT:
+        fee = 0
+    return Money(fee, account.balance.currency)"""
+replace = """    if account.balance.cents >= WAIVE_AT:
+        return Money(0, account.balance.currency)
+    return Money(FEES.get(account.kind, 0), account.balance.currency)"""
+[scenario.expect]
+changes = ["body:ledger/fees.py::monthly_fee"]
+impacted = ["ledger/bank.py::Bank.month_end"]
+selected = ["tests/test_bank.py::test_month_end_charges_fees_and_pays_interest"]
+failing = []
+
+[[scenario]]
+id = "legacy-delete"
+title = "Delete the unused legacy rounding helper"
+why = "Dead code: deleting something nothing calls selects no tests and breaks nothing."
+[[scenario.edit]]
+file = "ledger/legacy.py"
+find = '''def old_rounding(amount: float) -> float:
+    """Banker's rounding to two places, from before balances were integer cents."""
+    return round(amount + 0.0, 2)
+'''
+replace = ""
+[scenario.expect]
+changes = ["delete:ledger/legacy.py::old_rounding"]
+max_selected = 0
+failing = []

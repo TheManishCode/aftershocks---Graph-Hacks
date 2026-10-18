@@ -1,0 +1,14 @@
+# QuixBugs (Lin et al., 2017), vendored by scripts/vendor_quixbugs.py: 40 classic algorithms, each with one real,
+# published bug. A scenario swaps the correct program for its buggy twin; the tests in that program's own test file
+# must fail, test selection must reach every one of them, and culprit ranking must name the program's function first.
+
+repo = "quixbugs"
+description = "40 real single-line bugs from the QuixBugs repair benchmark, with the benchmark's own pytest cases."
+run = true
+
+[generate]
+bugs = "bugs/quixbugs"
+target = "quixbugs/{name}.py"
+failing_in = "tests/test_{name}.py"
+culprit = "quixbugs/{name}.py::{name}"
+culprit_top = 1

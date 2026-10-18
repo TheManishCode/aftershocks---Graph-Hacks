@@ -4,7 +4,11 @@ Security model:
   * AFTERSHOCK_API_KEY set  -> every route except /health requires `Authorization: Bearer <key>` (constant-time check).
     The web UI never ships the key to the browser: its Next.js route handler proxies and adds the header server-side.
   * Local indexing is confined to AFTERSHOCK_REPO_ROOTS; remote indexing accepts only https URLs on allowed hosts,
-    cloned shallow with hooks disabled. Repository code is parsed, never executed.
+    cloned shallow with hooks disabled. Repository code is parsed, never executed -- except by the test runner
+    below.
+  * Running a repo's tests (D18) is off unless AFTERSHOCK_ALLOW_RUN is set, and then only for a loopback peer
+    with a loopback Host header (no DNS rebinding), one run per repo. It is not exposed over MCP.
+  * Without an API key, only loopback Hosts and AFTERSHOCK_ALLOWED_HOSTS are served (DNS-rebinding guard).
   * Cypher from callers goes through the read-only guard and GRAPH.RO_QUERY.
   * Errors never carry stack traces; unexpected failures are logged server-side and returned as a generic 500.
 """
@@ -51,6 +55,22 @@ def require_key(request: Request) -> None:
     token = got[7:] if got.lower().startswith("bearer ") else ""
     if not hmac.compare_digest(token.encode(), key.encode()):
         raise HTTPException(401, "missing or invalid API key", headers={"WWW-Authenticate": "Bearer"})
+
+
+_LOOPBACK = {"127.0.0.1", "::1", "localhost", "testclient"}  # "testclient" is Starlette's TestClient peer
+
+
+def _host_name(host: str) -> str:
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[1:].split("]", 1)[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _trusted_host(host: str) -> bool:
+    """Loopback names, AFTERSHOCK_ALLOWED_HOSTS, and Starlette's TestClient default."""
+    name = _host_name(host)
+    return name in _LOOPBACK or name == "testserver" or name in {_host_name(h) for h in get_settings().allowed_host_list()}
 
 
 class _MCPAuth:
@@ -101,6 +121,15 @@ app = FastAPI(title="Aftershock", version=VERSION, lifespan=lifespan, docs_url="
 app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin], allow_methods=["GET", "POST", "DELETE"],
                    allow_headers=["Authorization", "Content-Type"], max_age=600)
 app.mount("/mcp", _MCPAuth(_mcp_asgi))
+
+
+@app.middleware("http")
+async def rebinding_guard(request: Request, call_next):
+    """Without an API key, a web page could DNS-rebind its own name to 127.0.0.1 and drive the API from a browser.
+    Only Hosts we serve on are accepted then; with a key set, the key already stops that."""
+    if not get_settings().api_key and not _trusted_host(request.headers.get("host", "")):
+        return JSONResponse({"detail": "unknown Host; add it to AFTERSHOCK_ALLOWED_HOSTS"}, 421)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -353,6 +382,140 @@ async def diff_md(repo: str, body: DiffBody):
 @app.post(f"{v1}/repos/{{repo}}/tests", dependencies=auth)
 async def tests(repo: str, body: TestsBody):
     return await call(T.select_tests, repo, body.targets, body.rev)
+
+
+# ---- running tests (D18) -----------------------------------------------------------------------------------------
+
+_runs: dict[str, threading.Event] = {}
+MAX_RUNS = 2
+
+
+def run_refusal(request: Request) -> str | None:
+    """Why this request may not run tests, or None. Executing repo code is only for the operator's own machine."""
+    if not get_settings().allow_run:
+        return "running tests is off; start the API with AFTERSHOCK_ALLOW_RUN=1 on your own machine"
+    peer = request.client.host if request.client else ""
+    if peer not in _LOOPBACK or _host_name(request.headers.get("host", "")) not in _LOOPBACK:
+        return "running tests is only allowed from this machine (loopback client and Host)"
+    return None
+
+
+class RunBody(BaseModel):
+    mode: Literal["diff", "targets", "all", "coverage"] = "diff"
+    targets: list[str] | None = Field(None, max_length=50)
+    rev: str | None = Field(None, max_length=200)
+    timeout: int = Field(1800, ge=10, le=7200)
+
+
+@app.get(f"{v1}/runtime", dependencies=auth)
+async def runtime_status(request: Request):
+    why = run_refusal(request)
+    return {"enabled": why is None, "reason": why}
+
+
+@app.post(f"{v1}/repos/{{repo}}/run/stream", dependencies=auth)
+async def run_stream(repo: str, body: RunBody, request: Request):
+    """Select and run the repo's tests, streaming each outcome as SSE (start, selected, test, progress, done).
+    The run is recorded in the graph; `done` carries its `run_id`."""
+    from .runtime import jobs
+
+    return _job_stream(repo, request, "run", lambda emit, cancel: jobs.run_tests(
+        repo, body.mode, emit, targets=body.targets, rev=body.rev, cancel=cancel, timeout=body.timeout))
+
+
+class HealBody(BaseModel):
+    max_rounds: int = Field(3, ge=1, le=5)
+    timeout: int = Field(1800, ge=10, le=7200)
+
+
+@app.post(f"{v1}/repos/{{repo}}/runs/{{run_id}}/heal/stream", dependencies=auth)
+async def heal_stream(repo: str, run_id: str, body: HealBody, request: Request):
+    """Take a recorded failing run to the fix loop (D25): re-run, ask Claude with the graph's culprit chain as
+    context, re-verify, keep only a strict improvement. Streams start, run, ran, suspect, asking, round, done.
+    It writes to the checkout, so it sits behind the same gate as running tests and is never exposed over MCP.
+    Leaving the page does not stop it: an edit is always either kept after a re-run or reverted."""
+    from .runtime import jobs
+
+    if not T.RUN_ID.match(run_id):
+        raise HTTPException(400, "invalid run id")
+    return _job_stream(repo, request, "heal", lambda emit, cancel: jobs.heal_run(
+        repo, run_id, emit, max_rounds=body.max_rounds, timeout=body.timeout), stop_on_leave=False)
+
+
+def _job_stream(repo: str, request: Request, what: str, job, *, stop_on_leave: bool = True) -> StreamingResponse:
+    """Run `job(emit, cancel)` on a thread, one per repo, and stream what it emits as SSE, ending with `end`."""
+    if why := run_refusal(request):
+        raise HTTPException(403, why)
+    T._graph(repo)
+    cancel = threading.Event()
+    with _lock:
+        if repo in _runs:
+            raise HTTPException(409, f"a test run for {repo} is already in progress")
+        if len(_runs) >= MAX_RUNS:
+            raise HTTPException(429, "too many test runs in progress; try again shortly", headers={"Retry-After": "10"})
+        _runs[repo] = cancel
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def emit(kind: str, data: dict) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, (kind, data))
+
+    def work():
+        try:
+            emit("done", job(emit, cancel))
+        except (T.ToolError, T.NotFound) as e:
+            emit("error", {"detail": str(e)})
+        except Exception as e:  # RuntimeErrorReport carries pytest's own output, which is the useful part
+            from .runtime.pytest_run import RuntimeErrorReport
+
+            if isinstance(e, RuntimeErrorReport):
+                emit("error", {"detail": str(e)[-2000:]})
+            else:
+                log.exception("%s failed", what)
+                emit("error", {"detail": f"the {what} failed; see server log"})
+        finally:
+            with _lock:
+                _runs.pop(repo, None)
+            emit("end", {})
+
+    threading.Thread(target=work, name=f"{what}-{repo}", daemon=True).start()
+
+    async def stream():
+        try:
+            while True:
+                try:
+                    kind, data = await asyncio.wait_for(queue.get(), 15)
+                except TimeoutError:
+                    if await request.is_disconnected():
+                        break
+                    yield ": keep-alive\n\n"
+                    continue
+                yield f"event: {kind}\ndata: {json.dumps(data, default=str)}\n\n"
+                if kind == "end":
+                    break
+                if kind == "test" and await request.is_disconnected():
+                    break
+        finally:
+            if stop_on_leave:
+                cancel.set()  # the browser left or the run ended: either way stop pytest
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get(f"{v1}/repos/{{repo}}/runs", dependencies=auth)
+async def runs_list(repo: str, limit: int = Query(20, ge=1, le=50)):
+    return await call(T.test_runs, repo, limit)
+
+
+@app.get(f"{v1}/repos/{{repo}}/runs/{{run_id}}", dependencies=auth)
+async def run_get(repo: str, run_id: str):
+    return await call(T.run_detail, repo, run_id)
+
+
+@app.get(f"{v1}/repos/{{repo}}/libraries", dependencies=auth)
+async def libraries_list(repo: str):
+    return await call(T.test_libraries, repo)
 
 
 @app.post(f"{v1}/repos/{{repo}}/path", dependencies=auth)

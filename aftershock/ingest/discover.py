@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -50,6 +51,33 @@ def list_sources(root: Path) -> list[str]:
             continue
         keep.append(p)
     return sorted(keep)[:MAX_FILES]
+
+
+LIB_PREFIX = "@lib/"  # graph paths of test-library files: `@lib/<library>/<path inside it>`
+
+
+def libraries(repo_props: dict) -> dict[str, str]:
+    """{library name: absolute directory} registered on the repo (`aftershock library add`)."""
+    try:
+        libs = json.loads(repo_props.get("libraries") or "{}")
+    except ValueError:
+        return {}
+    return {k: v for k, v in libs.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def library_sources(libs: dict[str, str]) -> dict[str, Path]:
+    """{graph path: file on disk} for the Python files of every registered test library that is still on disk."""
+    out: dict[str, Path] = {}
+    for name, d in sorted(libs.items()):
+        base = Path(d)
+        if base.is_dir():
+            out.update({f"{LIB_PREFIX}{name}/{p}": base / p for p in list_sources(base) if p.endswith(".py")})
+    return out
+
+
+def library_dirs(libs: dict[str, str]) -> dict[str, str]:
+    """{absolute directory: graph path prefix}, to map pytest's view of a library file back to the graph."""
+    return {str(Path(d).resolve()): f"{LIB_PREFIX}{name}/" for name, d in libs.items()}
 
 
 def read_configs(root: Path) -> dict[str, bytes]:

@@ -114,6 +114,8 @@ export interface Impacted {
   path: { from: string; to: string; label?: string; type: string; how?: string; confidence?: number; file?: string; lines?: number[]; verdict?: string; via?: string }[];
   verdict?: string;
   pagerank?: number;
+  /** a recorded test run executed this symbol's seed (COVERS edge) */
+  runtime?: boolean;
 }
 
 export interface Seed {
@@ -174,6 +176,8 @@ export interface Impact {
   hops: number;
   max_depth: number;
   truncated: boolean;
+  /** tests found through recorded per-test coverage */
+  runtime_tests?: number;
   note?: string;
   problems?: Problem[];
   markdown?: string;
@@ -228,6 +232,10 @@ export interface Suspect {
   failing_tests: string[];
   hops: number;
   path: { from: string; to: string; type: string; how?: string; confidence?: number; lines?: number[] }[];
+  /** "coverage" when its passing-test count comes from recorded per-test coverage (D26) */
+  basis?: "coverage" | "static";
+  /** the score in words: how many failing / passing tests reach it, the Ochiai arithmetic, the hop count */
+  why?: string;
 }
 
 export interface CulpritResult {
@@ -299,6 +307,111 @@ export interface AskResult {
   hint?: string;
 }
 
+export type RunMode = "diff" | "targets" | "all" | "coverage";
+
+export interface RunRequest {
+  mode: RunMode;
+  targets?: string[];
+  rev?: string;
+}
+
+/** One pytest outcome row, as the plugin reports it; setup/teardown rows appear only when they fail or skip. */
+export interface TestRow {
+  nodeid: string;
+  when: "setup" | "call" | "teardown";
+  outcome: "passed" | "failed" | "skipped";
+  seconds: number;
+  message?: string;
+}
+
+export interface RunSelected {
+  count: number;
+  suite_tests: number;
+  files: Impact["files"];
+  note?: string;
+  untested_seeds: Seed[];
+  runtime_tests: number;
+  tests: { id: string; name: string; file: string; line: number; p: number; hop: number | null; reach?: boolean }[];
+}
+
+export interface RunDone {
+  mode: RunMode;
+  selected?: number | null;
+  suite_tests?: number;
+  exit_code?: number;
+  seconds: number;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  note?: string;
+  output_tail?: string;
+  culprits?: CulpritResult;
+  /** coverage mode */
+  edges?: number;
+  symbols_covered?: number;
+  tests_run?: number;
+  /** the TestRun this run was recorded as (D25); absent for coverage mode */
+  run_id?: string;
+}
+
+/** A recorded TestRun node (D25). `trigger` is "run" for a user run and "heal" for a re-run after an AI edit. */
+export interface TestRunSummary {
+  id: string;
+  mode: string;
+  trigger: "run" | "heal" | string;
+  started: number;
+  seconds: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  exit_code: number;
+  tests: number;
+  selected: number;
+  commit: string;
+  parent?: string | null;
+  heal_step?: string;
+  heal_round?: number;
+  heal_suspect?: string;
+  heal_diff?: string;
+  heal_why?: string;
+  /** ran under per-test coverage, so its culprit ranking uses executed code (D26) */
+  measured?: boolean;
+}
+
+export interface RunDetail extends TestRunSummary {
+  failures: { nodeid: string; test: string; when?: string; message: string }[];
+  changed: string[];
+  culprits: CulpritResult | null;
+  output_tail: string;
+  results: { test: string; outcome: "passed" | "failed" | "skipped"; seconds: number; message?: string }[];
+  retries: string[];
+  history?: Record<string, { runs: number; failed: number }>;
+}
+
+/** One fix attempt from the heal loop (analysis/heal.py HealRound). */
+export interface HealRound {
+  n: number;
+  suspect: { id: string; name: string; file: string; line?: number; score?: number };
+  file: string;
+  before_failed: number;
+  after_failed: number;
+  outcome: "fixed" | "partial" | "no_change" | "worse" | "write_rejected" | "claude_error" | string;
+  reverted: boolean;
+  diff_preview?: string | null;
+  /** the fixer's "Cause: … Evidence: …" */
+  explanation?: string | null;
+  /** the read-only graph lookups the fixer made before editing */
+  tools?: { name: string; input: Record<string, unknown> }[] | null;
+}
+
+export interface HealDone {
+  verdict: string;
+  note: string;
+  initial: { passed: number; failed: number } | null;
+  final: { passed: number; failed: number } | null;
+  rounds: Omit<HealRound, "n">[];
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -357,7 +470,15 @@ export const api = {
     request<CulpritResult>("POST", `${r(repo)}/culprit`, b),
   cypher: (repo: string, query: string) =>
     request<{ rows: Record<string, unknown>[]; count: number; receipts: Receipts }>("POST", `${r(repo)}/cypher`, { query }),
+  runtime: () => request<{ enabled: boolean; reason: string | null }>("GET", "/runtime"),
+  runs: (repo: string, limit = 20) => request<{ runs: TestRunSummary[] }>("GET", `${r(repo)}/runs${q({ limit })}`),
+  runDetail: (repo: string, id: string) => request<RunDetail>("GET", `${r(repo)}/runs/${encodeURIComponent(id)}`),
+  libraries: (repo: string) => request<{ libraries: { name: string; path: string; on_disk: boolean; files?: number; tests?: number }[] }>("GET", `${r(repo)}/libraries`),
 };
 
 export const eventsUrl = (repo: string, after = 0) => `/api/v1${r(repo)}/events?after=${after}`;
 export const askStreamUrl = (repo: string) => `/api/v1${r(repo)}/ask/stream`;
+/** POST {@link RunRequest}; SSE frames: start, selected, test, progress, done, error, end (D18). */
+export const runStreamUrl = (repo: string) => `/api/v1${r(repo)}/run/stream`;
+/** POST {max_rounds?, timeout?}; SSE frames: start, run, ran, suspect, asking, round, done, error, end (D25). */
+export const healStreamUrl = (repo: string, id: string) => `/api/v1${r(repo)}/runs/${encodeURIComponent(id)}/heal/stream`;

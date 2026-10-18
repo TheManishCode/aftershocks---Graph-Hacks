@@ -57,8 +57,8 @@ def tool_specs() -> list[dict]:
         listed = anyio.run(M.server.list_tools)
         specs = []
         for t in listed:
-            if t.name == "repos":
-                continue
+            if t.name == "repos" or (t.annotations and t.annotations.read_only_hint is False):
+                continue  # the Ask agent reads; it never runs or edits (D26)
             schema = json.loads(json.dumps(t.input_schema))
             schema.get("properties", {}).pop("repo", None)
             schema["required"] = [r for r in schema.get("required", []) if r != "repo"]

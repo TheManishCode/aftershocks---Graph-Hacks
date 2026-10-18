@@ -13,6 +13,12 @@ Schema
   (Symbol)-[:OVERRIDES {how, confidence, lines}]->(Symbol)    Child.m -> nearest Base.m it redefines
   (File)-[:IMPORTS {names, line}]->(File)    (File)-[:USES]->(External)
   (File)-[:CO_CHANGES {count, strength}]->(File)    (Person)-[:AUTHORED {commits, last}]->(File)
+  (Symbol test)-[:COVERS {runs}]->(Symbol)    the test executed it, per recorded per-test coverage (runtime/)
+  Full-text index on Symbol(name, doc) (`db.idx.fulltext`): stemmed word search, used by lookup.search
+  (:TestRun {id, mode, trigger, started, seconds, passed, failed, skipped, exit_code, commit, ...})   runtime/runs.py
+  (TestRun)-[:RAN {outcome, seconds, message}]->(Symbol test)
+  (TestRun)-[:SUSPECTS {rank, score, hops}]->(Symbol)   culprit ranking of the run's failures
+  (TestRun)-[:RETRY_OF]->(TestRun)                      a heal re-run of an earlier run
 
 Ownership (what makes incremental re-indexing safe): a file owns its Symbols and every edge *leaving* them or
 leaving the File. Re-indexing a file replaces exactly what it owns; edges other files point at it survive unless
@@ -50,6 +56,8 @@ QUERIES: dict[str, str] = {
     "idx_symbol_file": "CREATE INDEX FOR (s:Symbol) ON (s.file)",
     "idx_external": "CREATE INDEX FOR (e:External) ON (e.name)",
     "idx_person": "CREATE INDEX FOR (p:Person) ON (p.email)",
+    "idx_testrun": "CREATE INDEX FOR (r:TestRun) ON (r.id)",
+    "idx_symbol_text": "CALL db.idx.fulltext.createNodeIndex('Symbol', 'name', 'doc')",  # stemmed words in docstrings
     # ---- writes (batched with UNWIND, ~1000 rows each) --------------------------------------------------------------
     "upsert_repo": "MERGE (r:Repo {name: $name}) SET r += $props",
     "upsert_files": "UNWIND $rows AS r MERGE (f:File {path: r.path}) SET f += r.props",
@@ -80,12 +88,19 @@ QUERIES: dict[str, str] = {
         UNWIND $rows AS r MATCH (s:Symbol {file: r.path}) WHERE NOT s.id IN r.keep DETACH DELETE s""",
     "drop_outgoing": """
         UNWIND $paths AS p MATCH (s:Symbol {file: p})-[e:CALLS|INHERITS|IMPLEMENTS|OVERRIDES]->() DELETE e""",
+    "mark_coverage_stale": """
+        UNWIND $paths AS p MATCH (s:Symbol {file: p})-[e:COVERS]-(:Symbol) SET e.stale = true""",
     "drop_file_links": """
         UNWIND $paths AS p MATCH (f:File {path: p})-[e:IMPORTS|USES]->() DELETE e""",
     "drop_files": """
         UNWIND $paths AS p MATCH (f:File {path: p}) OPTIONAL MATCH (f)-[:DEFINES]->(s:Symbol) DETACH DELETE s, f""",
     "drop_orphan_externals": "MATCH (x:External) WHERE NOT ()-[:USES]->(x) DELETE x",
     "drop_history": "MATCH ()-[e:CO_CHANGES|AUTHORED]->() DELETE e",
+    "drop_coverage": "MATCH ()-[e:COVERS]->() DELETE e",
+    "drop_coverage_of": "UNWIND $ids AS id MATCH (t:Symbol {id: id})-[e:COVERS]->() DELETE e",
+    "link_covers": """
+        UNWIND $rows AS r MATCH (a:Symbol {id: r.src}), (b:Symbol {id: r.dst})
+        MERGE (a)-[e:COVERS]->(b) SET e.runs = r.runs""",
     "set_history": "UNWIND $rows AS r MATCH (f:File {path: r.path}) SET f += r.props",
     "link_cochange": """
         UNWIND $rows AS r MATCH (a:File {path: r.a}), (b:File {path: r.b})
@@ -131,9 +146,9 @@ QUERIES: dict[str, str] = {
         WITH f, s ORDER BY s.line
         RETURN properties(f) AS file, collect(properties(s)) AS symbols""",
     "file_imports": """
-        MATCH (f:File {path: $path})-[e:IMPORTS]->(g:File) RETURN g.path AS path, e.names AS names, e.line AS line""",
+        MATCH (f:File {path: $path})-[e:IMPORTS]->(g:File) RETURN g.path AS path, e.names AS names, e.line AS line ORDER BY path LIMIT 2000""",
     "file_importers": """
-        MATCH (f:File {path: $path})<-[e:IMPORTS]-(g:File) RETURN g.path AS path, e.names AS names, e.line AS line""",
+        MATCH (f:File {path: $path})<-[e:IMPORTS]-(g:File) RETURN g.path AS path, e.names AS names, e.line AS line ORDER BY path LIMIT 2000""",
     "file_externals": "MATCH (:File {path: $path})-[:USES]->(x:External) RETURN x.name AS name ORDER BY name",
     "importers_of": """
         UNWIND $paths AS p MATCH (f:File {path: p})<-[e:IMPORTS]-(g:File)
@@ -149,21 +164,27 @@ QUERIES: dict[str, str] = {
         MATCH (s:Symbol) WHERE s.kind <> 'module' AND (toLower(s.name) CONTAINS $q OR toLower(s.qname) CONTAINS $q)
         RETURN s.id AS id, s.name AS name, s.qname AS qname, s.kind AS kind, s.file AS file, s.line AS line,
                s.is_test AS is_test, coalesce(s.pagerank, 0) AS pagerank, coalesce(s.fan_in, 0) AS fan_in
-        LIMIT 400""",
+        ORDER BY pagerank DESC, id LIMIT 400""",
+    "search_text": """
+        CALL db.idx.fulltext.queryNodes('Symbol', $q) YIELD node AS s, score WITH s, score WHERE s.kind <> 'module'
+        RETURN s.id AS id, s.name AS name, s.qname AS qname, s.kind AS kind, s.file AS file, s.line AS line,
+               s.is_test AS is_test, coalesce(s.pagerank, 0) AS pagerank, coalesce(s.fan_in, 0) AS fan_in, score
+        ORDER BY score DESC, id LIMIT 100""",
     "search_files": """
-        MATCH (f:File) WHERE toLower(f.path) CONTAINS $q RETURN f.path AS path, f.lang AS lang LIMIT 50""",
+        MATCH (f:File) WHERE toLower(f.path) CONTAINS $q RETURN f.path AS path, f.lang AS lang ORDER BY path LIMIT 50""",
     # One hop of the reverse (who depends on these?) frontier; Python drives the BFS so it can keep the best
     # evidence path per node and stop early, instead of enumerating every path inside Cypher.
     "dependents": """
         UNWIND $ids AS id MATCH (b:Symbol {id: id})<-[e:CALLS|INHERITS|IMPLEMENTS]-(a:Symbol)
         RETURN a.id AS src, b.id AS dst, type(e) AS type, e.how AS how, e.confidence AS confidence,
-               e.lines AS lines, e.args AS args, e.kind AS kind, a.is_test AS is_test, a.kind AS src_kind
-        LIMIT $limit""",
+               e.lines AS lines, e.args AS args, e.kind AS kind, e.names AS names, a.is_test AS is_test,
+               a.kind AS src_kind
+        ORDER BY src, dst LIMIT $limit""",
     "dependencies": """
         UNWIND $ids AS id MATCH (a:Symbol {id: id})-[e:CALLS|INHERITS|IMPLEMENTS]->(b:Symbol)
         RETURN a.id AS src, b.id AS dst, type(e) AS type, e.how AS how, e.confidence AS confidence,
                e.lines AS lines, e.args AS args, e.kind AS kind, b.is_test AS is_test, b.kind AS dst_kind
-        LIMIT $limit""",
+        ORDER BY src, dst LIMIT $limit""",
     # Dynamic dispatch, kept out of `dependents`/`dependencies` so culprit's reachability stays directional:
     # callers of a method the given override redefines (a call to Base.m can run Child.m) ...
     "dispatch_callers": """
@@ -171,16 +192,20 @@ QUERIES: dict[str, str] = {
         WHERE a.id <> x.id
         RETURN a.id AS src, x.id AS dst, b.id AS via, [r IN relationships(p) | r.confidence] AS confs,
                e.how AS how, e.confidence AS confidence, e.lines AS lines, e.args AS args, a.is_test AS is_test
-        LIMIT $limit""",
+        ORDER BY dst, src, via LIMIT $limit""",
     # ... the methods that redefine the given ones (what a call to Base.m may actually run) ...
     "dispatch_targets": """
         UNWIND $ids AS id MATCH (b:Symbol {id: id})<-[o:OVERRIDES]-(c:Symbol)
-        RETURN b.id AS src, c.id AS dst, o.how AS how, o.confidence AS confidence, o.lines AS lines LIMIT $limit""",
+        RETURN b.id AS src, c.id AS dst, o.how AS how, o.confidence AS confidence, o.lines AS lines
+        ORDER BY src, dst LIMIT $limit""",
     # ... and the overrides themselves, with their arity, for when a base method's contract changes.
     "overriders": """
         UNWIND $ids AS id MATCH (b:Symbol {id: id})<-[o:OVERRIDES]-(c:Symbol)
         RETURN c.id AS src, b.id AS dst, o.how AS how, o.confidence AS confidence, o.lines AS lines,
-               c.min_args AS min_args, c.max_args AS max_args LIMIT $limit""",
+               c.min_args AS min_args, c.max_args AS max_args ORDER BY dst, src LIMIT $limit""",
+    "bases_of": """
+        UNWIND $ids AS id MATCH p = (:Symbol {id: id})-[:INHERITS|IMPLEMENTS*1..3]->(b:Symbol)
+        RETURN id AS src, b.id AS base, length(p) AS depth ORDER BY src, depth, base""",
     "children": "UNWIND $ids AS id MATCH (:Symbol {id: id})-[:CONTAINS]->(c:Symbol) RETURN c.id AS id",
     "subclasses_of": """
         UNWIND $ids AS id MATCH (c:Symbol)-[:INHERITS|IMPLEMENTS]->(:Symbol {id: id}) RETURN c.id AS id""",
@@ -197,10 +222,10 @@ QUERIES: dict[str, str] = {
         MATCH (s:Symbol {id: $id})-[e:CALLS|INHERITS|IMPLEMENTS|OVERRIDES]-(o:Symbol)
         RETURN s.id AS center, o.id AS other, type(e) AS type, startNode(e) = s AS outgoing,
                e.how AS how, e.confidence AS confidence, e.lines AS lines
-        LIMIT $limit""",
+        ORDER BY confidence DESC, other LIMIT $limit""",
     "call_edges": """
         MATCH (a:Symbol)-[e:CALLS]->(b:Symbol) WHERE e.confidence >= $min_conf
-        RETURN a.id AS src, b.id AS dst, e.confidence AS confidence LIMIT $limit""",
+        RETURN a.id AS src, b.id AS dst, e.confidence AS confidence ORDER BY confidence DESC, src, dst LIMIT $limit""",
     "hotspots": """
         MATCH (f:File) WHERE NOT f.is_test
         OPTIONAL MATCH (f)-[:DEFINES]->(s:Symbol)
@@ -244,9 +269,52 @@ QUERIES: dict[str, str] = {
         MATCH (a:File)-[:IMPORTS]->(b:File) WHERE a.community IS NOT NULL AND b.community IS NOT NULL
               AND a.community <> b.community
         RETURN a.community AS src, b.community AS dst, count(*) AS weight""",
+    "spans": """
+        MATCH (s:Symbol) WHERE s.kind IN ['function', 'method'] AND s.file IN $files
+        RETURN s.id AS id, s.file AS file, s.line AS line, s.end_line AS end_line""",
+    "covering_tests": """
+        MATCH (t:Symbol)-[e:COVERS]->(s:Symbol) WHERE s.id IN $ids AND t.is_test
+        RETURN t.id AS src, s.id AS dst, e.runs AS runs, coalesce(e.stale, false) AS stale
+        ORDER BY src, dst LIMIT $limit""",
+    "tests_with_coverage": """
+        MATCH (t:Symbol)-[e:COVERS]->(:Symbol) WHERE t.is_test AND NOT coalesce(e.stale, false)
+        RETURN DISTINCT t.id AS id""",
+    "covered_by": """
+        MATCH (t:Symbol)-[:COVERS]->(s:Symbol) WHERE t.id IN $ids AND NOT s.is_test
+        RETURN t.id AS src, s.id AS dst ORDER BY src, dst LIMIT $limit""",
     "tests": """
         MATCH (s:Symbol) WHERE s.is_test AND s.kind IN ['function', 'method', 'test']
         RETURN s.id AS id, s.name AS name, s.qname AS qname, s.file AS file, s.line AS line""",
+    # ---- test runs (runtime/runs.py) ---------------------------------------------------------------------------
+    "run_upsert": "MERGE (r:TestRun {id: $id}) SET r += $props",
+    "run_link_ran": """
+        UNWIND $rows AS x MATCH (r:TestRun {id: $id}) MATCH (s:Symbol {id: x.test})
+        CREATE (r)-[:RAN {outcome: x.outcome, seconds: x.seconds, message: x.message}]->(s)""",
+    "run_link_suspects": """
+        UNWIND $rows AS x MATCH (r:TestRun {id: $id}) MATCH (s:Symbol {id: x.id})
+        CREATE (r)-[:SUSPECTS {rank: x.rank, score: x.score, hops: x.hops}]->(s)""",
+    "run_link_retry": "MATCH (a:TestRun {id: $id}), (b:TestRun {id: $parent}) MERGE (a)-[:RETRY_OF]->(b)",
+    "run_prune": "MATCH (r:TestRun) WITH r ORDER BY r.started DESC, r.id DESC SKIP $keep DETACH DELETE r",
+    "runs": """
+        MATCH (r:TestRun) OPTIONAL MATCH (r)-[:RETRY_OF]->(p:TestRun)
+        RETURN properties(r) AS run, p.id AS parent ORDER BY r.started DESC, r.id DESC LIMIT $limit""",
+    "run": """
+        MATCH (r:TestRun {id: $id}) OPTIONAL MATCH (r)-[:RETRY_OF]->(p:TestRun)
+        RETURN properties(r) AS run, p.id AS parent""",
+    "run_children": "MATCH (c:TestRun)-[:RETRY_OF]->(:TestRun {id: $id}) RETURN c.id AS id ORDER BY c.started",
+    "run_results": """
+        MATCH (:TestRun {id: $id})-[e:RAN]->(s:Symbol)
+        RETURN s.id AS test, s.file AS file, s.line AS line, e.outcome AS outcome, e.seconds AS seconds,
+               e.message AS message ORDER BY e.outcome = 'failed' DESC, test LIMIT $limit""",
+    "run_suspects": """
+        MATCH (:TestRun {id: $id})-[e:SUSPECTS]->(s:Symbol)
+        RETURN s.id AS id, s.qname AS name, s.file AS file, s.line AS line, e.rank AS rank, e.score AS score,
+               e.hops AS hops ORDER BY e.rank""",
+    "test_history": """
+        MATCH (r:TestRun)-[e:RAN]->(s:Symbol) WHERE s.id IN $ids
+          AND NOT (coalesce(r.trigger, '') = 'heal' AND coalesce(r.heal_step, '') <> 'initial')
+        RETURN s.id AS test, r.id AS run, r.started AS started, e.outcome AS outcome
+        ORDER BY r.started DESC LIMIT $limit""",
 }
 
 # Labels/edges that must never be written to by the guarded "run your own Cypher" escape hatch.
@@ -355,7 +423,8 @@ class RepoGraph:
         return self.key in self.store.list_keys()
 
     def ensure_schema(self) -> None:
-        for name in ("idx_file", "idx_symbol_id", "idx_symbol_name", "idx_symbol_file", "idx_external", "idx_person"):
+        for name in ("idx_file", "idx_symbol_id", "idx_symbol_name", "idx_symbol_file", "idx_external", "idx_person",
+                     "idx_testrun", "idx_symbol_text"):
             try:
                 self.rw(name)
             except GraphUnavailable:
@@ -381,9 +450,14 @@ class RepoGraph:
 
     def user_query(self, cypher: str, params: dict | None = None) -> list[dict]:
         self.explain_guard(cypher)
-        if not re.search(r"\bLIMIT\s+\d+\s*$", cypher.strip(), re.IGNORECASE):
-            cypher = f"{cypher.rstrip().rstrip(';')} LIMIT {self.store.s.max_rows}"
-        return self.ro("user_query", params, query=cypher)
+        cap = self.store.s.max_rows
+        cypher = cypher.strip().rstrip(";").rstrip()
+        m = re.search(r"\bLIMIT\s+(\d+)$", cypher, re.IGNORECASE)
+        if not m:
+            cypher = f"{cypher} LIMIT {cap}"
+        elif int(m.group(1)) > cap:  # a huge trailing LIMIT is clamped, not trusted
+            cypher = f"{cypher[: m.start()]}LIMIT {cap}"
+        return self.ro("user_query", params, query=cypher)[:cap]
 
     def path_query(self, src: str, dst: str, depth: int) -> list[dict]:
         depth = max(1, min(int(depth), self.store.s.max_depth + 2))

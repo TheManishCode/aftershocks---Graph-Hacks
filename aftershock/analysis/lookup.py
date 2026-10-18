@@ -36,7 +36,23 @@ def search(g: RepoGraph, q: str, limit: int = 20) -> list[dict]:
         return []
     rows = g.ro("search", {"q": q})
     rows.sort(key=lambda r: _rank(r, q))
+    if not rows or " " in q and len(rows) < limit:  # words, not an identifier: match names and docstrings by word
+        seen = {r["id"] for r in rows}
+        rows += [{**r, "match": "text"} for r in _text_search(g, q) if r["id"] not in seen]
     return rows[:limit]
+
+
+def _text_search(g: RepoGraph, q: str) -> list[dict]:
+    """Full-text (stemmed) search over names and docstrings: every word first, then any word. Only plain words reach
+    the index, so nothing in `q` is read as query syntax."""
+    words = [w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 1]
+    for query in dict.fromkeys([" ".join(words), "|".join(words)]):
+        if not query:
+            return []
+        rows = g.ro("search_text", {"q": query})  # empty, not an error, on a graph indexed before the index existed
+        if rows:
+            return sorted(rows, key=lambda r: (bool(r.get("is_test")), -float(r["score"]), r["id"]))
+    return []
 
 
 def find(g: RepoGraph, ref: str) -> Match:

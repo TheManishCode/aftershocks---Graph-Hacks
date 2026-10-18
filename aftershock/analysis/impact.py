@@ -12,6 +12,9 @@ and keeps the strongest contribution as its *evidence path*: every row in the an
 through concrete edges with file:line call sites. When a seed's arity changed, direct callers are judged against the
 argument counts recorded at their call sites ("passes 2 args; now requires 3") instead of the generic prior.
 
+Tests also arrive by COVERS: when per-test coverage has been recorded (`aftershock coverage`), every test that
+executed a seed is a dependent at hop 1, whether or not a static path exists (`runtime` marks those rows).
+
 Deterministic: same graph + same seeds = same answer. Potentially impacted is not the same as broken; the output
 says so, and every number comes from weights.json.
 """
@@ -45,6 +48,7 @@ class Seed:
     max_args: int | None = None
     note: str = ""
     changed_files: frozenset[str] = frozenset()  # files edited in the same change (their call sites may be updated)
+    names: frozenset[str] = frozenset()  # a module seed: the module-level values that changed (empty = any)
 
 
 @dataclass
@@ -56,6 +60,7 @@ class _Node:
     edge: dict | None = None
     verdict: str = ""
     contributions: list[float] = field(default_factory=list)
+    runtime: bool = False  # a recorded test run executed the seed
 
 
 def tier(p: float) -> str:
@@ -68,13 +73,19 @@ def _arity_verdict(seed: Seed, args_seen: list[int]) -> tuple[bool | None, str]:
     if seed.min_args is None or not args_seen:
         return None, ""
     known = [a for a in args_seen if a >= 0]
-    if not known:
-        return None, "call site uses spread/keyword arguments; arity not checkable"
+    keyed = [-a - 2 for a in args_seen if a <= -2]  # positional count of a site that also passes keywords
     hi = seed.max_args if seed.max_args is not None else -1
-    bad = [a for a in known if a < seed.min_args or (hi != -1 and a > hi)]
     want = f"{seed.min_args}" if hi == seed.min_args else f"{seed.min_args}..{'∞' if hi == -1 else hi}"
+    bad = [a for a in known if a < seed.min_args or (hi != -1 and a > hi)]
     if bad:
         return True, f"passes {bad[0]} arg{'s' if bad[0] != 1 else ''}; new signature takes {want}"
+    over = [a for a in keyed if hi != -1 and a > hi]  # keywords can fill missing slots, never remove extra positionals
+    if over:
+        return True, f"passes {over[0]} positional arg{'s' if over[0] != 1 else ''}; new signature takes {want}"
+    if not known:
+        return None, "call site uses spread/keyword arguments; arity not checkable"
+    if keyed or len(known) < len(args_seen):
+        return None, f"some call sites use spread/keyword arguments; the rest fit {want}"
     return False, f"passes {', '.join(map(str, sorted(set(known))))} arg(s); still fits {want}"
 
 
@@ -95,7 +106,8 @@ def _override_verdict(seed: Seed, r: dict) -> tuple[bool | None, str]:
     return True, f"override takes {have}; base now takes {want}"
 
 
-def simulate(g: RepoGraph, seeds: list[Seed], *, depth: int | None = None, min_p: float | None = None) -> dict:
+def simulate(g: RepoGraph, seeds: list[Seed], *, depth: int | None = None, min_p: float | None = None,
+             runtime: bool = True) -> dict:
     W = weights()
     s = g.store.s
     depth = max(1, min(depth or s.max_depth, s.max_depth))
@@ -132,6 +144,13 @@ def simulate(g: RepoGraph, seeds: list[Seed], *, depth: int | None = None, min_p
             w = W["edge"].get(typ, 0.5) * conf
             verdict = ""
             sd = seed_by_id.get(dst)
+            if sd is not None and sd.names and r.get("kind") == "read":
+                read = sd.names & set(r.get("names") or [])
+                if not read:
+                    return  # reads other module values than the ones that changed
+                verdict = f"reads {', '.join(sorted(read)[:3])}"
+            elif sd is None and r.get("kind") == "read":
+                w *= W["edge"].get("READ", 0.5)  # an impacted module: which of its values changed is unknown
             if typ == "OVERRIDES":  # only queried for seeds whose contract changed (weights.json "override")
                 broken, verdict = _override_verdict(sd, r)
                 base = W["arity_break"] if broken is True else W["arity_ok"] if broken is False else W["override"][sd.change]
@@ -186,7 +205,34 @@ def simulate(g: RepoGraph, seeds: list[Seed], *, depth: int | None = None, min_p
         frontier = sorted(new)
         if truncated:
             break
+    if runtime:
+        _add_covering_tests(g, nodes, seed_by_id, W)
     return _report(g, nodes, seed_by_id, hops_run, depth, truncated)
+
+
+def _add_covering_tests(g: RepoGraph, nodes: dict[str, _Node], seeds: dict[str, Seed], W: dict) -> None:
+    """Tests that executed a seed in the recorded coverage run: certain to exercise the change, so they must run."""
+    ids = sorted(seeds)
+    for i in range(0, len(ids), 500):
+        for r in g.ro("covering_tests", {"ids": ids[i : i + 500], "limit": 100_000}):
+            src, dst = r["src"], r["dst"]
+            if src in seeds:
+                continue
+            w = W["edge"].get("COVERS", 1.0) * (W["edge"].get("COVERS_STALE", 0.8) if r.get("stale") else 1.0)
+            p = round(nodes[dst].p * w, 4)
+            n = nodes.get(src)
+            if n is not None:
+                n.runtime = True
+                if p > n.p and n.hop > 1:  # a direct runtime link beats a long static chain
+                    nodes[src] = _Node(src, p, 1, dst, _covers_edge(r), "", [p], True)
+                continue
+            if p >= W["min_p"]:
+                nodes[src] = _Node(src, p, 1, dst, _covers_edge(r), "", [p], True)
+
+
+def _covers_edge(r: dict) -> dict:
+    return {"type": "COVERS", "how": "coverage", "confidence": 1.0, "lines": [], "args": [], "runs": r.get("runs") or 1,
+            "stale": bool(r.get("stale"))}
 
 
 def _path(nodes: dict[str, _Node], nid: str) -> list[str]:
@@ -238,7 +284,7 @@ def _report(g: RepoGraph, nodes: dict[str, _Node], seeds: dict[str, Seed], hops_
             "id": nid, "name": _label(sym, nid), "kind": sym.get("kind"), "file": sym.get("file"),
             "line": sym.get("line"), "p": n.p, "tier": tier(n.p), "hop": n.hop, "is_test": is_test,
             "via": len(n.contributions), "seed": chain[0], "path": steps, "verdict": n.verdict,
-            "pagerank": sym.get("pagerank") or 0,
+            "pagerank": sym.get("pagerank") or 0, "runtime": n.runtime,
         }
         (tests if is_test else impacted).append(row)
 
@@ -302,6 +348,7 @@ def _report(g: RepoGraph, nodes: dict[str, _Node], seeds: dict[str, Seed], hops_
                    "definite": definite, "likely": sum(1 for r in impacted if r["tier"] == "likely"),
                    "possible": sum(1 for r in impacted if r["tier"] == "possible")},
         "hops": hops_run, "max_depth": depth, "truncated": truncated,
+        "runtime_tests": sum(1 for t in tests if t["runtime"]),
         "model": {k: W[k] for k in ("seed", "edge", "transmit", "min_p")},
         "note": "Potentially impacted is not the same as broken: probabilities are priors from weights.json applied "
                 "to statically resolved edges. Dynamic dispatch, reflection and string-built calls are not seen.",

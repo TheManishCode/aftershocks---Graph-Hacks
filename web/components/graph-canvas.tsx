@@ -8,6 +8,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -19,6 +20,7 @@ import {
 import { memo, useEffect, useMemo, useState } from "react";
 
 import { symName } from "@/lib/format";
+import { useMedia } from "@/lib/hooks";
 import { layout, NODE_H, NODE_W, type XY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 
@@ -50,8 +52,8 @@ const Card = memo(function Card({ data }: NodeProps<Node<Data>>) {
     <div
       className={cn(
         "relative flex h-full w-full flex-col justify-center overflow-hidden rounded-lg border bg-obsidian/95 py-2 pr-3 pl-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition-colors",
-        data.emphasis ? "border-gold/60 epi-glow" : "border-graphite hover:border-smoke",
-        data.selected && "border-gold",
+        data.emphasis ? "border-brand/60 epi-glow" : "border-graphite hover:border-smoke",
+        data.selected && "border-brand ring-2 ring-brand/50 ring-offset-2 ring-offset-void",
       )}
       style={{ width: NODE_W, height: NODE_H }}
       title={data.id}
@@ -60,7 +62,7 @@ const Card = memo(function Card({ data }: NodeProps<Node<Data>>) {
       <span className={cn("absolute inset-y-0 left-0 w-1", data.tone ?? "bg-smoke")} aria-hidden />
       <div className="flex items-center gap-2">
         <span className="truncate font-mono text-[12.5px] text-paper">{symName(data.label)}</span>
-        {data.badge && <span className="ml-auto shrink-0 font-mono text-[10px] text-fog">{data.badge}</span>}
+        {data.badge && <span className="ml-auto shrink-0 font-mono text-[11px] text-fog">{data.badge}</span>}
       </div>
       {data.sub && <div className="mt-0.5 truncate font-mono text-[10.5px] text-fog">{data.sub}</div>}
       {data.value !== undefined && (
@@ -78,6 +80,8 @@ const nodeTypes = { card: Card };
 function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
   const [pos, setPos] = useState<Record<string, XY>>({});
   const flow = useReactFlow();
+  // on touch screens one finger scrolls the page (the canvas must not trap it); pinch and the buttons zoom and pan
+  const touch = useMedia("(pointer: coarse)");
   const key = useMemo(() => nodes.map((n) => n.id).join("|") + "#" + edges.map((e) => e.src + ">" + e.dst).join("|"), [nodes, edges]);
 
   useEffect(() => {
@@ -128,6 +132,8 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
         edges={rfEdges}
         nodeTypes={nodeTypes}
         onNodeClick={(_, n) => onSelect?.(n.id)}
+        panOnDrag={!touch}
+        preventScrolling={!touch}
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
         maxZoom={2}
@@ -135,6 +141,11 @@ function Inner({ nodes, edges, onSelect, selected, height, direction }: Props) {
         colorMode="dark"
         fitView
       >
+        {touch && (
+          <Panel position="top-left" className="!m-2 rounded bg-carbon/90 px-2 py-1 text-[11px] text-fog">
+            Pinch to zoom · tap a node
+          </Panel>
+        )}
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#26241f" />
         <Controls showInteractive={false} className="!border-graphite !bg-carbon [&>button]:!border-graphite [&>button]:!bg-carbon [&>button]:!fill-fog" />
       </ReactFlow>

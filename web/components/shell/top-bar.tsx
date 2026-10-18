@@ -1,27 +1,45 @@
 "use client";
 
+/**
+ * The top bar — identity and global controls only.
+ *
+ * Page navigation moved to the rail (components/shell/rail.tsx). What is left
+ * here is the set of controls that apply to *every* page: which repo, is the
+ * graph up, jump to anything, how should this look. Keeping those separate
+ * from page nav is what lets both grow without fighting for the same row.
+ */
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { FileCode, Menu, Pulse, Search, X } from "@/components/icons";
+import { Kbd } from "@/components/ds/primitives";
 import { REPO_NAV, repoHref } from "@/components/shell/nav";
+import { Preferences } from "@/components/shell/preferences";
+import { RailNav } from "@/components/shell/rail";
 import { Button } from "@/components/ui/button";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import { useDebounced, useQuery, useRepo } from "@/lib/hooks";
-import { cn } from "@/lib/utils";
 import { symName } from "@/lib/format";
+import { useDebounced, useModKey, useQuery, useRepo } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2 text-base font-medium tracking-[-0.012em] text-paper" aria-label="Aftershock home">
-      <span className="grid size-6 place-items-center rounded-md bg-paper text-void">
+    <Link
+      href="/"
+      className="flex shrink-0 items-center gap-2 text-ink-strong transition-opacity hover:opacity-80"
+      aria-label="Aftershock home"
+    >
+      <span className="grid size-6 place-items-center rounded-control bg-brand-solid text-white shadow-[var(--shadow-accent-glow)]">
         <Pulse className="size-4" aria-hidden />
       </span>
-      <span className="hidden sm:inline">Aftershock</span>
+      <span className="hidden font-display text-[1.05rem] leading-none font-medium tracking-[0.01em] uppercase sm:inline">
+        Aftershock
+      </span>
     </Link>
   );
 }
@@ -29,16 +47,32 @@ function Logo() {
 function HealthDot() {
   const h = useQuery("health", api.health, 20_000);
   const ok = h.data?.ok;
-  const label = h.error ? (h.error.status === 503 ? "Graph down" : "API unreachable") : !h.data ? "Checking…" : ok ? "Graph online" : "Degraded";
+  const label = h.error
+    ? h.error.status === 503
+      ? "Graph down"
+      : "API unreachable"
+    : !h.data
+      ? "Checking…"
+      : ok
+        ? "Graph online"
+        : "Degraded";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent" aria-label={label}>
-          <span className={cn("size-2 rounded-full", h.error ? "bg-st-refuted" : !h.data ? "bg-muted-foreground" : ok ? "bg-st-confirmed" : "bg-ov-missed")} />
+        <button
+          className="flex items-center gap-2 rounded-control px-2 py-1 font-mono text-micro uppercase text-ink-muted hover:bg-accent"
+          aria-label={label}
+        >
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              h.error ? "bg-fail" : !h.data ? "bg-ink-faint" : ok ? "bg-pass as-pulse" : "bg-warn",
+            )}
+          />
           <span className="hidden xl:inline">{label}</span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="font-mono text-xs">
+      <TooltipContent side="bottom" className="font-mono text-caption">
         {h.error ? h.error.message : h.data ? `api ${h.data.version} · falkordb ${h.data.falkordb}` : "…"}
       </TooltipContent>
     </Tooltip>
@@ -58,12 +92,12 @@ function RepoSwitcher({ className }: { className?: string }) {
   };
   return (
     <Select value={repo || undefined} onValueChange={switchTo}>
-      <SelectTrigger size="sm" className={cn("h-8 w-[170px] font-mono text-xs", className)} aria-label="Repository">
+      <SelectTrigger size="sm" className={cn("h-8 w-[170px] font-mono text-caption", className)} aria-label="Repository">
         <SelectValue placeholder="repository" />
       </SelectTrigger>
       <SelectContent>
         {names.map((n) => (
-          <SelectItem key={n} value={n} className="font-mono text-xs">
+          <SelectItem key={n} value={n} className="font-mono text-caption">
             {n}
           </SelectItem>
         ))}
@@ -78,6 +112,7 @@ function CommandPalette() {
   const router = useRouter();
   const repo = useRepo();
   const q = useDebounced(text.trim(), 150);
+  const mod = useModKey();
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -97,12 +132,18 @@ function CommandPalette() {
   };
   return (
     <>
-      <Button variant="outline" size="sm" className="h-8 gap-2 text-fog" onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" className="h-8 gap-2 text-ink-muted" onClick={() => setOpen(true)}>
         <Search className="size-3.5" aria-hidden />
         <span className="sr-only md:not-sr-only">Jump to…</span>
-        <kbd className="hidden rounded-sm bg-white/5 px-1 font-mono text-[10px] text-fog md:inline">⌘K</kbd>
+        <Kbd className="hidden md:inline-flex">{mod === "⌘" ? "⌘K" : "Ctrl K"}</Kbd>
       </Button>
-      <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false} title="Jump to" description="Symbols, files, pages and repositories">
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        shouldFilter={false}
+        title="Jump to"
+        description="Symbols, files, pages and repositories"
+      >
         {/* results come from the graph's own ranking; cmdk's fuzzy filter would re-sort and drop them */}
         <CommandInput placeholder={repo ? `Symbol or file in ${repo}…` : "Repository or page…"} value={text} onValueChange={setText} />
         <CommandList>
@@ -111,9 +152,11 @@ function CommandPalette() {
             <CommandGroup heading="Symbols">
               {hits.data!.symbols.map((s) => (
                 <CommandItem key={s.id} value={`sym ${s.id}`} onSelect={() => go(repoHref(repo, `/explore?ref=${encodeURIComponent(s.id)}`))}>
-                  <span className="w-14 shrink-0 font-mono text-[10px] text-fog uppercase">{s.kind}</span>
-                  <span className="truncate font-mono text-xs text-paper">{symName(s.qname)}</span>
-                  <span className="ml-auto truncate font-mono text-[11px] text-muted-foreground">{s.file}:{s.line}</span>
+                  <span className="w-14 shrink-0 font-mono text-micro uppercase text-ink-faint">{s.kind}</span>
+                  <span className="truncate font-mono text-caption text-ink-strong">{symName(s.qname)}</span>
+                  <span className="ml-auto truncate font-mono text-micro text-ink-muted">
+                    {s.file}:{s.line}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -123,18 +166,22 @@ function CommandPalette() {
               {hits.data!.files.slice(0, 8).map((f) => (
                 <CommandItem key={f.path} value={`file ${f.path}`} onSelect={() => go(repoHref(repo, `/explore?file=${encodeURIComponent(f.path)}`))}>
                   <FileCode className="size-4" aria-hidden />
-                  <span className="truncate font-mono text-xs">{f.path}</span>
+                  <span className="truncate font-mono text-caption">{f.path}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
           )}
           {repo && (
             <CommandGroup heading="Pages">
-              {REPO_NAV.filter((n) => !q || n.label.toLowerCase().includes(q.toLowerCase())).map(({ href, label, Icon }) => (
-                <CommandItem key={href} value={`page ${label}`} onSelect={() => go(repoHref(repo, href))}>
-                  <Icon className="size-4" aria-hidden /> {label}
-                </CommandItem>
-              ))}
+              {REPO_NAV.filter((n) => !q || n.label.toLowerCase().includes(q.toLowerCase()) || n.blurb.toLowerCase().includes(q.toLowerCase())).map(
+                ({ href, label, blurb, Icon }) => (
+                  <CommandItem key={href} value={`page ${label}`} onSelect={() => go(repoHref(repo, href))}>
+                    <Icon className="size-4" aria-hidden />
+                    <span>{label}</span>
+                    <span className="ml-auto hidden truncate text-micro text-ink-muted sm:inline">{blurb}</span>
+                  </CommandItem>
+                ),
+              )}
             </CommandGroup>
           )}
           <CommandGroup heading="Repositories">
@@ -142,8 +189,8 @@ function CommandPalette() {
               .filter((r) => !q || r.name.includes(q.toLowerCase()))
               .map((r) => (
                 <CommandItem key={r.name} value={`repo ${r.name}`} onSelect={() => go(repoHref(r.name))}>
-                  <span className="font-mono text-xs">{r.name}</span>
-                  <span className="ml-auto text-[11px] text-muted-foreground">{r.symbols ?? 0} symbols</span>
+                  <span className="font-mono text-caption">{r.name}</span>
+                  <span className="ml-auto text-micro text-ink-muted">{r.symbols ?? 0} symbols</span>
                 </CommandItem>
               ))}
           </CommandGroup>
@@ -161,56 +208,39 @@ export function TopBar() {
   useEffect(() => {
     setMenu(false);
   }, [pathname]);
-  const base = repo ? repoHref(repo) : "";
-  const isActive = (href: string) => (href === "" ? pathname === base : pathname.startsWith(base + href));
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-void/85 backdrop-blur-xl">
-      <div className="flex h-14 items-center gap-4 px-4 lg:px-6">
+    <header className="sticky top-0 z-40 border-b border-line bg-ground/85 backdrop-blur-xl">
+      <div className="flex h-[var(--topbar-h)] items-center gap-3 px-3 lg:px-4">
+        {repo && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="size-8 shrink-0 p-0 md:hidden"
+            onClick={() => setMenu((m) => !m)}
+            aria-expanded={menu}
+            aria-controls="mobile-nav"
+            aria-label={menu ? "Close menu" : "Open menu"}
+          >
+            {menu ? <X className="size-4" /> : <Menu className="size-4" />}
+          </Button>
+        )}
         <Logo />
         {repo && (
-          <nav className="hidden items-center gap-0.5 md:flex" aria-label="Repository">
-            {REPO_NAV.map(({ href, label, Icon }) => {
-              const active = isActive(href);
-              return (
-                <Link
-                  key={href}
-                  href={repoHref(repo, href)}
-                  aria-current={active ? "page" : undefined}
-                  aria-label={label}
-                  className={cn(
-                    "relative flex h-14 items-center gap-1.5 px-2 text-[13px] text-fog transition-colors hover:text-mist lg:px-2.5",
-                    active && "text-paper after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-gold",
-                  )}
-                >
-                  <Icon className="size-4" aria-hidden />
-                  <span className="hidden lg:inline">{label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+          <>
+            <span className="hidden h-5 w-px shrink-0 bg-line md:block" aria-hidden />
+            <RepoSwitcher className="hidden md:flex" />
+          </>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <HealthDot />
           <CommandPalette />
-          <RepoSwitcher className="hidden md:flex" />
-          {repo && (
-            <Button variant="ghost" size="sm" className="size-8 p-0 md:hidden" onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-controls="mobile-nav" aria-label={menu ? "Close menu" : "Open menu"}>
-              {menu ? <X className="size-4" /> : <Menu className="size-4" />}
-            </Button>
-          )}
+          <Preferences />
         </div>
       </div>
       {menu && repo && (
-        <div id="mobile-nav" className="epi-in border-t border-border bg-void/95 px-4 pt-2 pb-4 backdrop-blur-xl md:hidden">
-          <nav className="grid grid-cols-2 gap-1" aria-label="Repository">
-            {REPO_NAV.map(({ href, label, Icon }) => (
-              <Link key={href} href={repoHref(repo, href)} aria-current={isActive(href) ? "page" : undefined}
-                className={cn("flex items-center gap-2 rounded-md px-3 py-2.5 text-sm text-fog hover:bg-accent hover:text-mist", isActive(href) && "bg-accent text-paper")}>
-                <Icon className="size-4" aria-hidden /> {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <div id="mobile-nav" className="as-in border-t border-line bg-ground/95 px-4 pt-3 pb-4 backdrop-blur-xl md:hidden">
+          <RailNav repo={repo} />
+          <div className="mt-4 flex items-center gap-2 font-mono text-micro uppercase text-ink-muted">
             Repository <RepoSwitcher className="ml-auto w-[200px]" />
           </div>
         </div>

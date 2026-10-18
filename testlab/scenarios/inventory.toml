@@ -1,0 +1,48 @@
+# TypeScript, static only: there is no JS test runner in the testlab yet, so these check what Aftershock concludes
+# (changes, impact, selected tests) without running anything.
+
+repo = "inventory"
+description = "TypeScript order service: class methods through typed parameters, imports across directories."
+run = false
+
+[[scenario]]
+id = "reserve-signature"
+title = "Warehouse.reserve gains a required holdMinutes argument"
+why = "TS method call through a typed parameter (`wh: Warehouse`), two hops up to the HTTP handler."
+[[scenario.edit]]
+file = "src/stock.ts"
+find = "reserve(sku: Sku, qty: number): boolean {"
+replace = "reserve(sku: Sku, qty: number, holdMinutes: number): boolean {"
+[scenario.expect]
+changes = ["signature:src/stock.ts::Warehouse.reserve"]
+impacted = ["src/orders.ts::placeOrder", "src/api.ts::handleOrder"]
+not_impacted = ["src/api.ts::handleRestock"]
+selected = ["test/orders.test.ts::places an order when stock allows", "test/orders.test.ts::rejects and releases on a short line"]
+
+[[scenario]]
+id = "formatqty-rename"
+title = "formatQty renamed to formatUnits, the import left behind"
+why = "Rename across a directory boundary, reached through an aliased import in the test."
+[[scenario.edit]]
+file = "src/util/format.ts"
+find = "export function formatQty(qty: number): string {"
+replace = "export function formatUnits(qty: number): string {"
+[scenario.expect]
+changes = ["rename:src/util/format.ts::formatQty"]
+impacted = ["src/orders.ts::describe", "src/api.ts::handleOrder"]
+selected = ["test/orders.test.ts::describes an order"]
+
+[[scenario]]
+id = "pad-delete"
+title = "Delete the unused pad helper"
+why = "Dead code in TS: nothing imports it, so nothing is impacted or selected."
+[[scenario.edit]]
+file = "src/util/format.ts"
+find = """export function pad(text: string, width: number): string {
+  return text.length >= width ? text : text + " ".repeat(width - text.length);
+}
+"""
+replace = ""
+[scenario.expect]
+changes = ["delete:src/util/format.ts::pad"]
+max_selected = 0

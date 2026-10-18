@@ -1,0 +1,69 @@
+# Benchmark repositories: real projects with real test suites, pinned so results are reproducible.
+# `python scripts/bench_env.py <name>` clones (if needed), checks out `commit`, and builds .aftershock/envs/<name>
+# with `install`; then index, record coverage and score with the commands in bench/README.md.
+#
+# path     where the checkout lives, relative to this file
+# install  uv pip install arguments; "{root}" is the checkout. Test deps only: no docs/lint/packaging tooling.
+# pytest   extra pytest args the suite needs (empty for most)
+# status   ready | unsupported (with why)
+
+[click]
+url = "https://github.com/pallets/click.git"
+commit = "2247b35ea1c47c727d7a06e51fa280e12a863ff6"
+path = "../../_refs/click-eval"
+python = "3.12"
+install = ["-e", "{root}", "pytest", "coverage"]
+pytest = []
+status = "ready"
+notes = "Small, heavily tested CLI library. 2263 tests, ~8s under coverage. The default benchmark."
+
+[httpx]
+url = "https://github.com/encode/httpx.git"
+commit = "b5addb64f0161ff6bfe94c124ef76f6a1fba5254"
+path = "../../_refs/httpx-eval"
+python = "3.12"
+install = ["-e", "{root}[brotli,cli,http2,socks,zstd]", "pytest", "coverage", "chardet==5.2.0", "trio==0.31.0",
+           "trustme==1.2.1", "uvicorn==0.35.0", "cryptography"]
+pytest = []
+status = "ready"
+notes = """HTTP client. Its conftest starts uvicorn on the default 127.0.0.1:8000 (hard-coded): port 8000 must be free,
+or the suite fails to bind or, worse, talks to whatever already listens there. Test deps from its requirements.txt."""
+requires_free_ports = [8000]
+
+[code-graph-rag]
+url = "https://github.com/vitali87/code-graph-rag.git"
+commit = "4c27a1f147b1788952c74e6d1444fbd842120278"
+path = "../../_refs/code-graph-rag"
+python = "3.12"
+install = ["-e", "{root}", "pytest", "coverage"]
+pytest = []
+status = "unsupported"
+notes = "Large (1826 files) and its suite needs Memgraph and LLM keys; kept for static eval only."
+
+[zustand]
+url = "https://github.com/pmndrs/zustand.git"
+commit = "d7a5583cffd80af515f7dfb69583c95cbdc9e2ce"
+path = "../../_refs/zustand-eval"
+status = "unsupported"
+notes = "TypeScript (vitest). Runtime evidence is Python/pytest only for now; JS needs V8 coverage per test."
+
+# Held-out repos: never used to set or fit weights (scripts/fit_weights.py --test flask,starlette).
+[flask]
+url = "https://github.com/pallets/flask.git"
+commit = "d086db856be187255b8ec61ef409357393020f32"
+path = "../../_refs/flask-eval"
+python = "3.12"
+install = ["-e", "{root}", "pytest", "coverage", "asgiref", "python-dotenv"]
+pytest = []
+status = "ready"
+notes = "Web framework, src layout with its own flask/typing.py and flask/logging.py (stdlib-name shadowing). Held out."
+
+[starlette]
+url = "https://github.com/encode/starlette.git"
+commit = "a579222b161e5407cd311c32648ed7c845bda4a4"
+path = "../../_refs/starlette-eval"
+python = "3.12"
+install = ["-e", "{root}[full]", "httpx2[zstd]", "pytest", "coverage", "trio", "blockbuster", "importlib-metadata", "opentelemetry-sdk"]
+pytest = []
+status = "ready"
+notes = "ASGI toolkit, heavy on dispatch through __call__ and middleware stacks. Held out."

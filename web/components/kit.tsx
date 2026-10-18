@@ -1,12 +1,23 @@
 "use client";
 
-/** Small building blocks every page shares: page header, tiles, stats, states, receipts, symbol links. */
+/**
+ * Product building blocks: the pieces that know what a repo, a symbol or a
+ * receipt is. Everything visual here delegates to components/ds/* — this file
+ * decides *meaning*, the design system decides *appearance*.
+ *
+ * The public surface is unchanged on purpose: all nine pages import from here,
+ * so re-skinning the product is a change to ds/ plus this file, never to pages.
+ * New screens should prefer the ds primitives directly (Panel, Slab, Grid) and
+ * reach for these only when they need the product vocabulary.
+ */
 
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Check, CircleAlert, Copy, Loader2, Receipt } from "@/components/icons";
+import { Callout, Eyebrow, Kbd as DsKbd, Meter as DsMeter } from "@/components/ds/primitives";
+import { Panel } from "@/components/ds/panel";
 import { repoHref } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,22 +25,41 @@ import type { ApiError, Receipts as R } from "@/lib/api";
 import { ms, symName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+/**
+ * The page container. A `<div>`, not a `<main>`: the shell already owns the
+ * single `<main id="content">` landmark, and two would break screen-reader nav.
+ */
 export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <main className={cn("mx-auto w-full max-w-[1400px] px-4 pt-6 pb-16 lg:px-6", className)}>{children}</main>;
+  return (
+    <div className={cn("mx-auto w-full max-w-[var(--page-max)] px-4 pt-6 pb-16 lg:px-6", className)}>{children}</div>
+  );
 }
 
-export function PageHeader({ title, sub, children }: { title: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode }) {
+export function PageHeader({
+  title,
+  sub,
+  eyebrow,
+  children,
+}: {
+  title: React.ReactNode;
+  sub?: React.ReactNode;
+  /** Short mono label above the title — names the question this page answers. */
+  eyebrow?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
   return (
-    <div className="mb-6 flex flex-wrap items-end gap-x-6 gap-y-3">
+    <div className="mb-[var(--section-gap)] flex flex-wrap items-end gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[34px] leading-none">{title}</h1>
-        {sub && <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{sub}</p>}
+        {eyebrow && <Eyebrow className="mb-1.5 block">{eyebrow}</Eyebrow>}
+        <h1 className="text-display leading-none">{title}</h1>
+        {sub && <p className="mt-2 max-w-2xl text-body-sm text-ink-muted">{sub}</p>}
       </div>
       {children && <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
 }
 
+/** A titled data container. Thin wrapper over <Panel> so existing pages keep working. */
 export function Tile({
   title,
   action,
@@ -44,51 +74,57 @@ export function Tile({
   bodyClassName?: string;
 }) {
   return (
-    <section className={cn("epi-in flex min-w-0 flex-col rounded-xl border border-border bg-card/50", className)}>
-      {(title || action) && (
-        <header className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border/70 px-4 py-2">
-          <h2 className="text-[11px] font-medium tracking-[0.08em] text-fog uppercase">{title}</h2>
-          {action && <div className="ml-auto flex items-center gap-1">{action}</div>}
-        </header>
-      )}
-      <div className={cn("min-h-0 flex-1 p-4", bodyClassName)}>{children}</div>
-    </section>
+    <Panel title={title} action={action} className={cn("as-in", className)} bodyClassName={bodyClassName}>
+      {children}
+    </Panel>
   );
 }
 
 export function Stat({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-[11px] tracking-[0.08em] text-fog uppercase">{label}</div>
-      <div className={cn("mt-1 font-mono text-2xl tracking-tight text-paper tabular-nums", tone)}>{value}</div>
-      {hint && <div className="mt-0.5 truncate text-xs text-muted-foreground">{hint}</div>}
+      <Eyebrow className="block">{label}</Eyebrow>
+      {/* Barlow Condensed: a 6-digit count stays on one line at this size. */}
+      <div className={cn("mt-1 font-display text-[1.75rem] leading-none text-ink-strong tabular-nums", tone)}>{value}</div>
+      {hint && <div className="mt-1 truncate text-caption text-ink-muted">{hint}</div>}
     </div>
   );
 }
 
-export function ErrorNote({ error, className }: { error: ApiError | Error | string; className?: string }) {
+export function ErrorNote({ error, className, onRetry }: { error: ApiError | Error | string; className?: string; onRetry?: () => void }) {
   const msg = typeof error === "string" ? error : error.message;
   return (
-    <div role="alert" className={cn("flex items-start gap-2 rounded-lg border border-coral-red/30 bg-coral-red/5 px-3 py-2.5 text-sm text-mist", className)}>
-      <CircleAlert className="mt-0.5 size-4 shrink-0 text-coral-red" aria-hidden />
-      <span className="min-w-0 break-words">{msg}</span>
-    </div>
+    <Callout
+      role="alert"
+      tone="fail"
+      className={className}
+      icon={<CircleAlert className="text-fail" aria-hidden />}
+      action={
+        onRetry && (
+          <Button variant="outline" size="sm" className="h-7" onClick={onRetry}>
+            Retry
+          </Button>
+        )
+      }
+    >
+      <span className="break-words whitespace-pre-wrap">{msg}</span>
+    </Callout>
   );
 }
 
 export function Empty({ title, children, icon }: { title: string; children?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="grid place-items-center rounded-xl border border-dashed border-border px-6 py-14 text-center">
-      {icon && <div className="mb-3 text-fog">{icon}</div>}
-      <div className="text-sm text-paper">{title}</div>
-      {children && <div className="mt-1.5 max-w-md text-sm text-muted-foreground">{children}</div>}
+    <div className="grid place-items-center rounded-panel border border-dashed border-line-strong px-6 py-14 text-center">
+      {icon && <div className="mb-3 text-ink-faint [&>svg]:size-6">{icon}</div>}
+      <div className="text-body text-ink-strong">{title}</div>
+      {children && <div className="mt-1.5 max-w-md text-body-sm text-ink-muted">{children}</div>}
     </div>
   );
 }
 
 export function Spinner({ label = "Loading" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+    <div className="flex items-center gap-2 text-body-sm text-ink-muted" role="status">
       <Loader2 className="size-4 animate-spin" aria-hidden /> {label}…
     </div>
   );
@@ -100,12 +136,12 @@ export function Receipts({ r, className }: { r?: R; className?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px] text-fog", className)} tabIndex={0}>
+        <span className={cn("inline-flex items-center gap-1.5 font-mono text-micro text-ink-muted tabular-nums", className)} tabIndex={0}>
           <Receipt className="size-3.5" aria-hidden />
           {r.queries} {r.queries === 1 ? "query" : "queries"} · {ms(r.total_ms)}
         </span>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="font-mono text-xs">
+      <TooltipContent side="bottom" className="font-mono text-caption">
         {r.queries} graph queries, {ms(r.graph_ms)} in FalkorDB, {ms(r.total_ms)} total
       </TooltipContent>
     </Tooltip>
@@ -118,7 +154,7 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
     <Button
       variant="outline"
       size="sm"
-      className={cn("h-7 text-xs", className)}
+      className={cn("h-7 text-caption", className)}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);
@@ -129,7 +165,7 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
         }
       }}
     >
-      {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {done ? "Copied" : label}
+      {done ? <Check className="size-3.5 text-pass" /> : <Copy className="size-3.5" />} {done ? "Copied" : label}
     </Button>
   );
 }
@@ -139,7 +175,7 @@ export function SymLink({ repo, id, name, className }: { repo: string; id: strin
   return (
     <Link
       href={repoHref(repo, `/explore?ref=${encodeURIComponent(id)}`)}
-      className={cn("font-mono text-paper underline-offset-2 hover:text-gold hover:underline", className)}
+      className={cn("font-mono text-ink-strong underline-offset-2 hover:text-brand hover:underline", className)}
     >
       {symName(name ?? id.slice(id.indexOf("::") + 2))}
     </Link>
@@ -150,7 +186,7 @@ export function FileLink({ repo, path, line, className }: { repo: string; path: 
   return (
     <Link
       href={repoHref(repo, `/explore?file=${encodeURIComponent(path)}`)}
-      className={cn("font-mono text-muted-foreground underline-offset-2 hover:text-mist hover:underline", className)}
+      className={cn("font-mono text-ink-muted underline-offset-2 hover:text-brand hover:underline", className)}
     >
       {path}
       {line ? `:${line}` : ""}
@@ -160,13 +196,9 @@ export function FileLink({ repo, path, line, className }: { repo: string; path: 
 
 /** A thin horizontal meter (probability, confidence, share). */
 export function Meter({ value, className, barClassName }: { value: number; className?: string; barClassName?: string }) {
-  return (
-    <div className={cn("h-1 w-full overflow-hidden rounded-full bg-graphite", className)} aria-hidden>
-      <div className={cn("h-full rounded-full bg-mist", barClassName)} style={{ width: `${Math.max(2, Math.min(100, value * 100))}%` }} />
-    </div>
-  );
+  return <DsMeter value={value} className={className} barClassName={barClassName} />;
 }
 
 export function Kbd({ children }: { children: React.ReactNode }) {
-  return <kbd className="rounded-sm border border-border bg-white/5 px-1 font-mono text-[10px] text-fog">{children}</kbd>;
+  return <DsKbd>{children}</DsKbd>;
 }

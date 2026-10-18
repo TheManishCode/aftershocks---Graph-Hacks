@@ -29,6 +29,7 @@ from ..ingest.parse import is_test_path, lang_for, parse_file
 from .impact import Seed, simulate
 
 TIERS = ("definite", "likely", "possible")
+TOP_K = (5, 10)  # chosen on click+httpx, held-out gain on flask+starlette (DECISIONS D24)
 
 
 @dataclass
@@ -115,12 +116,20 @@ def _files(root: Path, commit: str) -> list[str]:
     return sorted({p for p in raw.decode("utf-8", "replace").split("\0") if p and lang_for(p)})
 
 
-def evaluate(g: RepoGraph, root: Path, *, commits: int = 200, rev: str = "HEAD", depth: int | None = 3,
-             max_files: int = 12, max_seeds: int = 40, progress=None) -> dict:
+@dataclass
+class Case:
+    commit: str
+    anchor: str
+    seeds: list[Seed]
+    truth: set[str]
+
+
+def cases(g: RepoGraph, root: Path, ev: Eval, *, commits: int = 200, rev: str = "HEAD", max_files: int = 12,
+          max_seeds: int = 40, progress=None):
+    """Replayable cases: per past commit and per changed file in it (the anchor), the anchor's changed symbols that
+    still exist in the graph as seeds, and the commit's other indexed files as the truth. Skips are counted on `ev`;
+    the generator closes each commit before the next starts, so `ev.commits_used` is current between commits."""
     indexed = {r["path"] for r in g.ro("file_index")}
-    by_dir: dict[str, set[str]] = {}
-    for p in indexed:
-        by_dir.setdefault(p.rsplit("/", 1)[0] if "/" in p else "", set()).add(p)
     known: dict[str, bool] = {}
 
     def exists(ids: list[str]) -> set[str]:
@@ -130,7 +139,6 @@ def evaluate(g: RepoGraph, root: Path, *, commits: int = 200, rev: str = "HEAD",
             known.update({x: x in found for x in ask[i : i + 1000]})
         return {i for i in ids if known[i]}
 
-    ev = Eval()
     shas = _commits(root, rev, commits)
     for n, commit in enumerate(shas, 1):
         ev.commits_seen += 1
@@ -162,29 +170,45 @@ def evaluate(g: RepoGraph, root: Path, *, commits: int = 200, rev: str = "HEAD",
             if not seeds:
                 ev.skipped["anchor: seeds no longer in graph"] += 1
                 continue
-            truth = set(files) - {anchor}
-            res = simulate(g, seeds, depth=depth)
-            rows = res["impacted"] + res["tests"]
-            kind = "signature" if any(s.change == "signature" for s in seeds) else "body"
-            for i, t in enumerate(TIERS):
-                predicted = {r["file"] for r in rows if r["tier"] in TIERS[: i + 1]} - {anchor}
-                ev.score(f"{t}+").add(predicted, truth)
-                if t == "possible":
-                    ev.score(f"by_change:{kind}").add(predicted, truth)
-                    for part, pick in (("tests", True), ("code", False)):
-                        sub = {f for f in truth if _is_test(f) == pick}
-                        if sub:
-                            ev.score(f"by_truth:{part}").add({f for f in predicted if _is_test(f) == pick}, sub)
-                    if len(ev.examples) < 15 and predicted & truth:
-                        ev.examples.append({"commit": commit[:10], "anchor": anchor, "seeds": len(seeds),
-                                            "hits": sorted(predicted & truth)[:5], "missed": sorted(truth - predicted)[:5]})
-            # the product's file-level fallback: importers of the anchor with no resolved edge to the change
-            all_rows = {r["file"] for r in rows} | {r["file"] for r in res.get("import_only", [])}
-            ev.score("variant:+importers").add(all_rows - {anchor}, truth)
-            d = anchor.rsplit("/", 1)[0] if "/" in anchor else ""
-            ev.score("baseline:same_dir").add(by_dir.get(d, set()) - {anchor}, truth)
             used = True
+            yield Case(commit, anchor, seeds, set(files) - {anchor})
         ev.commits_used += int(used)
+
+
+def evaluate(g: RepoGraph, root: Path, *, commits: int = 200, rev: str = "HEAD", depth: int | None = 3,
+             max_files: int = 12, max_seeds: int = 40, progress=None) -> dict:
+    by_dir: dict[str, set[str]] = {}
+    for p in (r["path"] for r in g.ro("file_index")):
+        by_dir.setdefault(p.rsplit("/", 1)[0] if "/" in p else "", set()).add(p)
+    ev = Eval()
+    for case in cases(g, root, ev, commits=commits, rev=rev, max_files=max_files, max_seeds=max_seeds,
+                      progress=progress):
+        anchor, seeds, truth = case.anchor, case.seeds, case.truth
+        # static only: recorded coverage describes HEAD, and would leak into every replayed past commit
+        res = simulate(g, seeds, depth=depth, runtime=False)
+        rows = res["impacted"] + res["tests"]
+        kind = "signature" if any(s.change == "signature" for s in seeds) else "body"
+        for i, t in enumerate(TIERS):
+            predicted = {r["file"] for r in rows if r["tier"] in TIERS[: i + 1]} - {anchor}
+            ev.score(f"{t}+").add(predicted, truth)
+            if t == "possible":
+                ev.score(f"by_change:{kind}").add(predicted, truth)
+                for part, pick in (("tests", True), ("code", False)):
+                    sub = {f for f in truth if _is_test(f) == pick}
+                    if sub:
+                        ev.score(f"by_truth:{part}").add({f for f in predicted if _is_test(f) == pick}, sub)
+                if len(ev.examples) < 15 and predicted & truth:
+                    ev.examples.append({"commit": case.commit[:10], "anchor": anchor, "seeds": len(seeds),
+                                        "hits": sorted(predicted & truth)[:5], "missed": sorted(truth - predicted)[:5]})
+        # the product's file-level fallback: importers of the anchor with no resolved edge to the change
+        all_rows = {r["file"] for r in rows} | {r["file"] for r in res.get("import_only", [])}
+        ev.score("variant:+importers").add(all_rows - {anchor}, truth)
+        # the head of the product's ranked file list: what a reviewer reads first
+        ranked = [f["file"] for f in res["files"] if f["file"] != anchor]
+        for k in TOP_K:
+            ev.score(f"variant:top{k}").add(set(ranked[:k]), truth)
+        d = anchor.rsplit("/", 1)[0] if "/" in anchor else ""
+        ev.score("baseline:same_dir").add(by_dir.get(d, set()) - {anchor}, truth)
 
     tiers = {k[:-1]: ev.scores[k].as_dict() for k in (f"{t}+" for t in TIERS) if k in ev.scores}
     return {

@@ -49,7 +49,7 @@ export function Markdown({ text }: { text: string }) {
           ),
           th: ({ children }) => <th className="border-b border-border bg-card/60 px-2 py-1.5 text-left font-medium">{children}</th>,
           td: ({ children }) => <td className="border-b border-border/60 px-2 py-1.5">{children}</td>,
-          blockquote: ({ children }) => <blockquote className="border-l-2 border-gold/50 pl-3 text-muted-foreground">{children}</blockquote>,
+          blockquote: ({ children }) => <blockquote className="border-l-2 border-brand/50 pl-3 text-muted-foreground">{children}</blockquote>,
         }}
       >
         {githubToMarkdown(text)}

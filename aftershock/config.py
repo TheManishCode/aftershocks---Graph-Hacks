@@ -42,7 +42,9 @@ class Settings(BaseSettings):
     clone_timeout_s: int = 300
     allowed_clone_hosts: str = "github.com,gitlab.com,bitbucket.org,codeberg.org"
     cache_dir: Path = Path(".aftershock/cache")
+    env_dir: Path = Path(".aftershock/envs")  # per-repo test interpreters (scripts/bench_env.py)
     history_commits: int = 2_000  # git log depth mined for churn / co-change / owners
+    allow_run: bool = False  # D18: let the API run a repo's tests (loopback clients only); never exposed over MCP
 
     anthropic_api_key: str | None = Field(
         None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "AFTERSHOCK_ANTHROPIC_API_KEY")

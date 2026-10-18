@@ -100,7 +100,7 @@ export function SymbolPicker({
         </PopoverAnchor>
         <PopoverContent
           align="start"
-          className="w-[--radix-popover-trigger-width] min-w-[min(520px,90vw)] p-0"
+          className="w-(--radix-popover-trigger-width) min-w-[min(520px,90vw)] p-0"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <CommandList className="max-h-[340px]">

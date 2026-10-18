@@ -23,7 +23,7 @@ from tree_sitter_language_pack import get_parser
 
 from .model import MODULE, Call, Def, FileFacts, Import
 
-PARSER_VERSION = "13"  # bump whenever extraction output changes; it is folded into every file's freshness key
+PARSER_VERSION = "20"  # bump whenever extraction output changes; it is folded into every file's freshness key
 
 EXTENSIONS = {
     ".py": "python", ".pyi": "python",
@@ -38,6 +38,9 @@ CLASSLIKE = {"class", "interface", "struct", "trait", "enum", "impl", "suite"}
 
 MAX_BYTES = 1_000_000  # bigger files are almost always generated or vendored
 COMMENTS = {"comment", "line_comment", "block_comment"}
+# Nodes whose own text is not all in their children: a Python string with an escape keeps the plain text between
+# `escape_sequence` children, and `:04d` in an f-string is bare text under `format_specifier`. Fingerprint them whole.
+OPAQUE = {"string_content", "format_specifier"}
 # Nodes that open a new function body: a `return` belongs to the nearest one, which may be an anonymous callback.
 FUNC_NODES = {
     "function_definition", "lambda", "function_declaration", "function_expression", "arrow_function", "function",
@@ -210,6 +213,9 @@ class _Extractor:
         self.exporting = False
         self.saw_export = False
         self.export_names: set[str] = set()
+        self.values: dict[str, list[str]] = {}  # module-level value name -> its binding statements (normalized)
+        self.reads: list[tuple[str, str, int]] = []  # (caller, name, line): bare names read inside definitions
+        self.assigned: dict[str, set[str]] = {}  # caller -> names it binds locally (they shadow module values)
 
     # ---- helpers -------------------------------------------------------------------------------------------------
     def text(self, n: Node | None) -> str:
@@ -331,7 +337,8 @@ class _Extractor:
                 ch = self.chain(c.named_children[0])
                 if "<expr>" not in ch:
                     out.append(f"...={ch}")
-        return "obj:" + ";".join(out) if out else ""
+        # A non-empty literal is known even with no entry to point at (`{ n: 1 }`); `{}` is usually filled in later.
+        return "obj:" + ";".join(out) if out or any(c.type != "comment" for c in v.named_children) else ""
 
     def iter_type(self, v: Node | None) -> str:
         """What one element of an iterated expression is: `iter:xs` (a sequence element or a mapping key), `item:m`
@@ -410,7 +417,10 @@ class _Extractor:
         if any(c.type in ("spread_element", "list_splat", "dictionary_splat", "variadic_argument") for c in named):
             return -1
         if self.lang == "python":
-            named = [c for c in named if c.type != "keyword_argument"]  # keywords can fill any slot: count positional
+            pos = [c for c in named if c.type != "keyword_argument"]
+            if len(pos) < len(named):  # keywords can fill any slot: only "too many positionals" stays checkable
+                return -(len(pos) + 2)
+            return len(pos)
         return len(named)
 
     # ---- driver --------------------------------------------------------------------------------------------------
@@ -425,6 +435,7 @@ class _Extractor:
         if self.lang == "python":
             mod.doc = self.py_docstring(self.root)[0]
         self.visit_children(self.root)
+        self.module_values(mod)
         if self.lang in JSLIKE and not self.saw_export:  # no ESM exports: CommonJS / script, assume visible
             for d in self.f.defs:
                 if "." not in d.qname and d.kind not in ("test", "suite", "module"):
@@ -549,6 +560,8 @@ class _Extractor:
         if ret is not None:
             d.returns = _squash(self.text(ret).lstrip(":-> ").strip(), 120)
         self.note_params(params_node, d)
+        if lang == "python" and n.parent is not None and n.parent.type == "decorated_definition":
+            self.note_parametrize(n.parent, d)
         self.f.defs.append(d)
 
         self.scope.append((qname, kind))
@@ -653,6 +666,39 @@ class _Extractor:
                 if cls is not None and any(x.type == "accessibility_modifier" for x in c.children):
                     cls.types.setdefault(name, typ)
 
+    def note_parametrize(self, deco_def: Node, d: Def) -> None:
+        """`@pytest.mark.parametrize("t, v", [(IntRange(0, 5), "3"), ...])`: a parameter every row builds with the same
+        constructor gets that class as its type, so `t.convert(v)` in the test body resolves like an annotated one."""
+        for dec in deco_def.named_children:
+            call = dec.named_children[0] if dec.type == "decorator" and dec.named_children else None
+            if call is None or call.type != "call" or not self.text(call.child_by_field_name("function")).endswith(
+                    "mark.parametrize"):
+                continue
+            args = [a for a in call.child_by_field_name("arguments").named_children if a.type != "keyword_argument"]
+            if len(args) < 2 or args[1].type not in ("list", "tuple"):
+                continue
+            if args[0].type == "string":
+                names = [x.strip() for x in self.text(args[0]).strip("'\"").split(",")]
+            elif args[0].type in ("list", "tuple"):
+                names = [self.text(x).strip("'\"") for x in args[0].named_children if x.type == "string"]
+            else:
+                continue
+            seen: list[set[str]] = [set() for _ in names]
+            for row in args[1].named_children:
+                if row.type == "call" and self.text(row.child_by_field_name("function")).endswith("param"):
+                    vals = [x for x in row.child_by_field_name("arguments").named_children
+                            if x.type != "keyword_argument"]  # pytest.param(a, b, id=...)
+                else:
+                    vals = list(row.named_children) if len(names) > 1 and row.type in ("tuple", "list") else [row]
+                if len(names) == 1:
+                    vals = vals[:1]
+                for i, v in enumerate(vals[: len(names)]):
+                    fn = v.child_by_field_name("function") if v.type == "call" else None
+                    seen[i].add(self.text(fn) if fn is not None and fn.type in ("identifier", "attribute") else "?")
+            for name, callees in zip(names, seen, strict=True):
+                if len(callees) == 1 and "?" not in callees and name:
+                    d.types.setdefault(name, callees.pop())
+
     def body_of(self, n: Node) -> Node | None:
         if n.type == "variable_declarator":
             v = self.fn_value(n)
@@ -750,7 +796,7 @@ class _Extractor:
                     continue
             if c.type in self.branches:
                 cx += 1
-            if c.child_count == 0:
+            if c.child_count == 0 or c.type in OPAQUE:
                 parts.append(self.text(c))
             else:
                 stack.extend(reversed(c.children))
@@ -835,7 +881,9 @@ class _Extractor:
         if lang == "python":
             sup = n.child_by_field_name("superclasses")
             for c in sup.named_children if sup is not None else []:
-                if c.type in ("identifier", "attribute"):
+                if c.type == "subscript":  # class IntRange(_NumberRangeBase[int, int]): the base is the generic
+                    c = c.child_by_field_name("value")
+                if c is not None and c.type in ("identifier", "attribute"):
                     out.append(self.text(c))
         elif lang in JSLIKE:
             her = next((c for c in n.children if c.type == "class_heritage"), None)
@@ -1005,14 +1053,15 @@ class _Extractor:
 
     def destructured(self, left: Node | None, right: Node | None) -> None:
         """`const { getState } = create(…)` names a member of the result: `prop:create().getState`. Positional parts
-        (`const [x, setX] = useState()`, `a, b = f()`) are `part:`, never typed; a part of a library call is a library
-        value, so calls on it count as external."""
+        (`const [x, setX] = useState()`, `a, b = f()`) are `part:`; a part of a library call is a library value, so
+        calls on it count as external. Python's `a, b = f()` also records the position (`part:f()@1`): the resolver
+        types it from f's `-> tuple[A, B]`."""
         if left is None or right is None or right.type not in ("call", "call_expression", "await_expression", "identifier", "member_expression"):
             return
         c = self.chain(right.named_children[0] if right.type == "await_expression" and right.named_children else right)
         if "<expr>" in c:
             return
-        for x in left.named_children:
+        for pos, x in enumerate(left.named_children):
             key = x
             if x.type == "pair_pattern":
                 key, x = x.child_by_field_name("key"), x.child_by_field_name("value")
@@ -1021,7 +1070,9 @@ class _Extractor:
             if left.type == "object_pattern" and key is not None and key.type in ("property_identifier", "shorthand_property_identifier_pattern"):
                 self.note_type(self.text(x), f"prop:{c}.{self.text(key)}")
             elif right.type not in ("identifier", "member_expression"):
-                self.note_type(self.text(x), "part:" + c)
+                starred = any(k.type == "list_splat_pattern" for k in left.named_children[:pos])
+                at = f"@{pos}" if self.lang == "python" and not starred else ""
+                self.note_type(self.text(x), "part:" + c + at)
 
     def on_lexical_declaration(self, n: Node) -> bool:
         return True
@@ -1079,6 +1130,10 @@ class _Extractor:
         args = n.child_by_field_name("arguments")
         if fn is not None and fn.type == "identifier":
             self.add_call(self.text(fn), None, n, args)
+            proto = _PY_BUILTIN_DUNDERS.get(self.text(fn))
+            pos = [a for a in args.named_children if a.type not in COMMENTS] if args is not None else []
+            if proto and len(pos) == 1 and pos[0].type != "keyword_argument":
+                self.dunder(proto, pos[0], n)
         elif fn is not None and fn.type == "attribute":
             self.add_call(self.text(fn.child_by_field_name("attribute")), self.receiver(fn.child_by_field_name("object")), n, args)
         return True
@@ -1237,6 +1292,11 @@ class _Extractor:
                 and self.text(left)[:1].isupper() and right.type in ("subscript", "attribute", "identifier", "binary_operator")
                 and "<expr>" not in self.chain(right if right.type != "binary_operator" else right.named_children[0])):
             typ = "alias:" + _squash(self.text(right), 200)  # Env = Annotated[EnvGraph, Depends(…)] / Url = str | URL
+        if left is not None and left.type == "identifier":
+            if not self.scope:
+                self.add_value(self.text(left), n)
+            else:
+                self.assigned.setdefault(self.caller, set()).add(self.text(left))
         if left is not None and left.type in ("pattern_list", "tuple_pattern"):
             self.destructured(left, right)
         elif left is not None and left.type == "identifier" and self.scope and self.scope[-1][1] == "class":
@@ -1253,6 +1313,9 @@ class _Extractor:
 
     def on_with_item(self, n: Node) -> bool:  # Python: with Client() as c (the resolver looks at __enter__)
         v = n.child_by_field_name("value")
+        cm = v.named_children[0] if v is not None and v.type == "as_pattern" and v.named_children else v
+        self.dunder("__enter__", cm, n)
+        self.dunder("__exit__", cm, n)
         if v is not None and v.type == "as_pattern" and v.named_children:
             alias = v.child_by_field_name("alias")
             target = alias.named_children[0] if alias is not None and alias.named_children else None
@@ -1271,6 +1334,7 @@ class _Extractor:
                 self.note_type(self.text(ids[1]), f"item:{c}")  # slice element or map value
             return True
         self.loop_targets(n.child_by_field_name("left"), n.child_by_field_name("right"))
+        self.dunder("__iter__", n.child_by_field_name("right"), n)
         return True
 
     on_for_in_clause = on_for_statement  # Python comprehensions
@@ -1320,6 +1384,11 @@ class _Extractor:
             return True
         if name is None or name.type != "identifier":
             return True
+        if self.lang in JSLIKE:
+            if not self.scope:
+                self.add_value(self.text(name), n)
+            else:
+                self.assigned.setdefault(self.caller, set()).add(self.text(name))
         t = n.child_by_field_name("type")
         typ = self.text(t).lstrip(":").strip() if t is not None else self.value_type(n.child_by_field_name("value"))
         if not typ and n.parent is not None and n.parent.type in ("local_variable_declaration", "field_declaration"):
@@ -1371,6 +1440,93 @@ class _Extractor:
         return True
 
     def on_mod_item(self, n: Node) -> bool:
+        return True
+
+    # ---- module-level values and protocol methods ------------------------------------------------------------------
+    def module_values(self, mod: Def) -> None:
+        """Digest each module-level value and turn reads of it (or of an imported name, which may be one) into `read`
+        calls. The resolver keeps a read only when the name is a value, not a function or class."""
+        tops = {d.name for d in self.f.defs if "." not in d.qname}
+        mod.values = {k: _digest(v) for k, v in sorted(self.values.items()) if k not in tops}
+        imported = {alias for imp in self.f.imports for _, alias in imp.names if alias and alias != "*"}
+        params = {d.qname: {p.lstrip("*&.").split(":")[0].split("=")[0].strip() for p in d.params} for d in self.f.defs}
+        seen: set[tuple[str, str]] = set()
+        for caller, name, line in self.reads:
+            if (name not in mod.values and name not in imported) or (caller, name) in seen:
+                continue
+            if name in params.get(caller, ()) or name in self.assigned.get(caller, ()):
+                continue  # a parameter or local of the same name shadows the module value
+            seen.add((caller, name))
+            self.f.calls.append(Call(caller, name, None, line, kind="read"))
+
+    def add_value(self, name: str, n: Node) -> None:
+        if name and not (name.startswith("__") and name.endswith("__")):  # __all__, __version__: metadata
+            self.values.setdefault(name, []).append(self.fingerprint(n, skip=None)[0])
+
+    def on_identifier(self, n: Node) -> bool:
+        if not self.scope or self.lang not in ("python", *JSLIKE):
+            return False
+        p = n.parent
+        if p is not None:
+            if _is_field(p, "attribute", n) or _is_field(p, "name", n) and p.type == "keyword_argument":
+                return False  # `obj.NAME` / `f(NAME=…)`: not a read of the module's NAME
+            if p.type in ("call", "call_expression") and _is_field(p, "function", n):
+                return False  # a call: CALLS already covers it
+        self.reads.append((self.caller, self.text(n), n.start_point[0] + 1))
+        return False
+
+    def dunder(self, name: str, target: Node | None, n: Node) -> None:
+        """A protocol method the syntax runs on `target` (`len(x)` -> x.__len__). Bound only when the receiver's type
+        is known, never by a repo-wide guess, and a miss is not an unresolved call."""
+        if target is None or self.lang != "python":
+            return
+        p = n.parent
+        while p is not None and p.type not in ("block", "module"):
+            if p.type == "type":  # `x: str | None`, `t.Callable[[int], str]`: an annotation, never run as an operator
+                return
+            p = p.parent
+        recv = self.receiver(target)
+        if recv and not recv.startswith("<expr>"):
+            self.f.calls.append(Call(self.caller, name, recv, n.start_point[0] + 1, kind="dunder"))
+
+    def on_subscript(self, n: Node) -> bool:  # Python: x[k] -> __getitem__, x[k] = v -> __setitem__
+        v = n.child_by_field_name("value")
+        if v is not None and not (v.type == "identifier" and self.text(v)[:1].isupper()):  # Foo[int]: a type
+            p = n.parent
+            write = p is not None and p.type in ("assignment", "augmented_assignment") and _is_field(p, "left", n)
+            self.dunder("__setitem__" if write else "__getitem__", v, n)
+        return True
+
+    def on_binary_operator(self, n: Node) -> bool:  # Python: a + b -> a.__add__
+        op = n.child_by_field_name("operator")
+        name = _PY_BINOPS.get(op.type) if op is not None else None
+        if name:
+            self.dunder(name, n.child_by_field_name("left"), n)
+        return True
+
+    def on_comparison_operator(self, n: Node) -> bool:  # Python: a == b -> a.__eq__, k in m -> m.__contains__
+        ops = [c for c in n.children if not c.is_named]
+        kids = n.named_children
+        if ops and len(kids) >= 2:
+            op = "not in" if ops[0].type == "not" else ops[0].type
+            if op in ("in", "not in"):
+                self.dunder("__contains__", kids[1], n)
+            elif op in _PY_CMPOPS:
+                self.dunder(_PY_CMPOPS[op], kids[0], n)
+        return True
+
+    def on_attribute(self, n: Node) -> bool:  # Python: obj.attr read (the resolver keeps it only for @property)
+        if self.lang != "python":
+            return True
+        p = n.parent
+        if p is not None and (p.type == "call" and _is_field(p, "function", n)
+                              or p.type in ("assignment", "augmented_assignment") and _is_field(p, "left", n)
+                              or p.type == "delete_statement"):
+            return True
+        obj, attr = n.child_by_field_name("object"), n.child_by_field_name("attribute")
+        recv = self.receiver(obj) if obj is not None else None
+        if attr is not None and recv and not recv.startswith("<expr>"):
+            self.f.calls.append(Call(self.caller, self.text(attr), recv, n.start_point[0] + 1, kind="prop"))
         return True
 
     # ---- small utilities -----------------------------------------------------------------------------------------
@@ -1462,3 +1618,21 @@ class _Extractor:
         elif t == "use_list":
             for c in n.named_children:
                 yield from self._flatten_use(c, prefix)
+
+
+def _is_field(parent: Node, name: str, n: Node) -> bool:
+    c = parent.child_by_field_name(name)
+    return c is not None and c.id == n.id
+
+
+_PY_BINOPS = {
+    "+": "__add__", "-": "__sub__", "*": "__mul__", "/": "__truediv__", "//": "__floordiv__", "%": "__mod__",
+    "@": "__matmul__", "**": "__pow__", "|": "__or__", "&": "__and__", "^": "__xor__", "<<": "__lshift__",
+    ">>": "__rshift__",
+}
+_PY_CMPOPS = {"==": "__eq__", "!=": "__ne__", "<": "__lt__", "<=": "__le__", ">": "__gt__", ">=": "__ge__"}
+_PY_BUILTIN_DUNDERS = {
+    "len": "__len__", "iter": "__iter__", "next": "__next__", "str": "__str__", "repr": "__repr__", "bool": "__bool__",
+    "hash": "__hash__", "abs": "__abs__", "reversed": "__reversed__", "int": "__int__", "float": "__float__",
+    "bytes": "__bytes__", "format": "__format__",
+}

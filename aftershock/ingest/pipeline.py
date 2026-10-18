@@ -26,7 +26,7 @@ from redis.exceptions import RedisError
 from ..config import get_settings
 from ..graph import RepoGraph, Store, get_store
 from . import history as hist
-from .discover import is_git, list_sources, read_configs
+from .discover import is_git, libraries, library_sources, list_sources, read_configs
 from .model import Call, Def, FileFacts, Import
 from .parse import PARSER_VERSION, file_sha, parse_file
 from .resolve import Edge, RepoConfig, Resolution, resolve
@@ -124,15 +124,20 @@ class ParseCache:
         tmp.replace(self.path)
 
 
-def load_facts(root: Path, name: str, progress: Progress | None = None) -> tuple[list[FileFacts], int, list[str]]:
-    """Parse every source file, reusing cached facts for unchanged content. Returns (facts, parsed, paths)."""
+def load_facts(root: Path, name: str, progress: Progress | None = None,
+               libs: dict[str, str] | None = None) -> tuple[list[FileFacts], int, list[str]]:
+    """Parse every source file, reusing cached facts for unchanged content. Returns (facts, parsed, paths).
+
+    Files of the repo's registered test libraries (`libs`) are indexed too, under `@lib/<name>/...`, always as tests:
+    their imports resolve into the repo like any test's, so selection and culprit ranking reach them."""
     s = get_settings()
     cache = ParseCache(s.cache_dir / f"{name}.facts.json.gz")
-    paths = list_sources(root)
+    lib_files = library_sources(libs or {})
+    paths = list_sources(root) + sorted(lib_files)
     facts, parsed = [], 0
     for i, p in enumerate(paths):
         try:
-            data = (root / p).read_bytes()
+            data = (lib_files.get(p) or root / p).read_bytes()
         except OSError:
             continue
         sha = file_sha(data)
@@ -140,6 +145,8 @@ def load_facts(root: Path, name: str, progress: Progress | None = None) -> tuple
         if f is None:
             f = parse_file(p, data)
             parsed += 1
+        if p in lib_files:
+            f.is_test = True
         facts.append(f)
         if progress and i % 250 == 0:
             progress("parse", {"done": i, "total": len(paths)})
@@ -165,6 +172,8 @@ def _symbol_row(d: Def, f: FileFacts) -> dict:
             "exported": d.exported, "is_test": d.is_test or (f.is_test and d.kind != "module" and d.name.startswith("test")),
             "min_args": d.min_args, "max_args": d.max_args, "decorators": d.decorators[:10], "returns": d.returns[:120],
             "bases": d.bases[:10], "lang": f.lang,
+            # name=digest pairs (FalkorDB properties hold no maps); `diff` compares them to find changed values
+            **({"values": [f"{k}={v}" for k, v in sorted(d.values.items())][:2000]} if d.kind == "module" else {}),
         },
     }
 
@@ -172,7 +181,7 @@ def _symbol_row(d: Def, f: FileFacts) -> dict:
 def _out_digest(path: str, edges: list[Edge], links: list, externals: set[str]) -> str:
     h = hashlib.blake2b(digest_size=10)
     for e in sorted(edges, key=lambda e: (e.src, e.dst, e.type)):
-        h.update(f"{e.src}>{e.dst}:{e.type}:{e.how}:{e.confidence}:{e.lines}:{e.args}:{e.kind}\n".encode())
+        h.update(f"{e.src}>{e.dst}:{e.type}:{e.how}:{e.confidence}:{e.lines}:{e.args}:{e.kind}:{e.names}\n".encode())
     for fl in sorted(links, key=lambda x: x.dst):
         h.update(f"I{fl.dst}:{sorted(fl.names)}:{fl.line}\n".encode())
     for x in sorted(externals):
@@ -207,7 +216,7 @@ def index_repo(
         t = now
 
     emit("start", {"repo": name, "root": str(root)})
-    facts, rep.parsed, _ = load_facts(root, name, emit)
+    facts, rep.parsed, _ = load_facts(root, name, emit, libraries((g.ro("repo") or [{"repo": {}}])[0]["repo"]))
     rep.files = len(facts)
     rep.parse_errors = [f"{f.path}: {f.error}" for f in facts if f.error][:50]
     lap("parse")
@@ -318,6 +327,11 @@ def write_graph(g: RepoGraph, facts: list[FileFacts], res: Resolution, rep: Inde
     progress("symbols", {"written": len(sym_rows)})
 
     g.batched("drop_outgoing", touched, size=500, key="paths")
+    # Recorded coverage survives a re-index (it costs a full test run to rebuild); edges touching files whose content
+    # changed are only flagged stale until the next `aftershock coverage`. A re-parse with the same content (parser
+    # upgrade, --full) leaves coverage as it was.
+    edited = sorted(p for p in rep.changed if existing.get(p) is None or existing[p].get("sha") != by_path[p].sha)
+    g.batched("mark_coverage_stale", edited, size=500, key="paths")
     g.batched("drop_file_links", touched, size=500, key="paths")
     rows: dict[str, list[dict]] = {"CALLS": [], "INHERITS": [], "IMPLEMENTS": [], "OVERRIDES": []}
     for p in touched:
@@ -327,6 +341,8 @@ def write_graph(g: RepoGraph, facts: list[FileFacts], res: Resolution, rep: Inde
                 props["lines"] = e.lines[:1]
             if e.type == "CALLS":
                 props.update({"count": e.count, "lines": e.lines[:50], "args": sorted(set(e.args))[:10], "kind": e.kind})
+                if e.names:
+                    props["names"] = sorted(e.names)[:50]
             rows[e.type].append({"src": e.src, "dst": e.dst, "props": props})
     g.batched("link_calls", rows["CALLS"])
     g.batched("link_inherits", rows["INHERITS"])

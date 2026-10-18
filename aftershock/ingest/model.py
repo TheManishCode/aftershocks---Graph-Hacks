@@ -42,6 +42,9 @@ class Def:
     # What calls to it evaluate to when no return type is declared, read from the body: the one type every `return`
     # agrees on ("Self" for `return self`), "" when they disagree or any is unknown. Generators: "yield:<type or ''>".
     ret_hint: str = ""
+    # Modules only: top-level value name -> digest of the statements that bind it (`TIMEOUT = 5`, `export const
+    # LIMITS = {...}`). A changed value seeds the module, and code that reads the name depends on it (CALLS kind read).
+    values: dict[str, str] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -62,8 +65,12 @@ class Call:
     name: str  # the called name: `bar` in foo.bar(), Bar in new Bar()
     receiver: str | None  # `foo` in foo.bar(); `self`/`this` for method calls on the instance; dotted for a.b.c()
     line: int
-    kind: str = "call"  # call | new
-    args: int = -1  # positional argument count at the call site; -1 when it contains a spread / unknown
+    # call | new | ref (a function passed as a value) | jsx | read (a module-level value read by name) |
+    # dunder (`len(x)`, `x[i]`, `a + b`, `with x`, `for _ in x`: a protocol method the syntax runs) | prop (`x.attr` read)
+    kind: str = "call"
+    # Positional argument count at the call site; -1 when it contains a spread / unknown. A Python call that also passes
+    # keywords is stored as -(positional + 2): keywords can fill required slots, so only the upper bound is checkable.
+    args: int = -1
 
 
 @dataclass(slots=True)

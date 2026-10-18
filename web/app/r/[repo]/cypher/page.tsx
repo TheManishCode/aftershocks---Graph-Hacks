@@ -7,7 +7,7 @@ import { CopyButton, Empty, ErrorNote, Kbd, Page, PageHeader, Receipts, Spinner,
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { useAction, useRepo } from "@/lib/hooks";
+import { useAction, useModKey, useRepo } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 const EXAMPLES: { label: string; query: string }[] = [
@@ -43,6 +43,7 @@ function cell(v: unknown): string {
 
 export default function CypherPage() {
   const repo = useRepo();
+  const mod = useModKey();
   const [query, setQuery] = useState(EXAMPLES[0].query);
   const run = useAction(api.cypher);
   const d = run.data;
@@ -116,7 +117,7 @@ export default function CypherPage() {
             />
             <div className="flex items-center gap-2 px-2 pb-1">
               <span className="text-[11px] text-fog">
-                <Kbd>⌘</Kbd> <Kbd>Enter</Kbd> to run
+                <Kbd>{mod}</Kbd> <Kbd>Enter</Kbd> to run
               </span>
               <Button type="submit" size="sm" className="ml-auto" disabled={!query.trim() || run.loading}>
                 <Terminal className="size-4" /> {run.loading ? "Running…" : "Run"}

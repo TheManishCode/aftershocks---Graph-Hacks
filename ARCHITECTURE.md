@@ -27,12 +27,16 @@
   - Python imports and TS module specifiers are followed, including tsconfig `paths` with TypeScript's
     exact-before-wildcard semantics.
   - Star re-exports are followed.
+  - Implicit calls (D19, Python): `Class(...)` resolves to `__init__`/`__new__`/`__post_init__`; operators and
+    builtins to dunders (`dunder`); attribute reads of `@property` to the getter (`prop`); reads of module-level
+    values to that value (`read`, weight `READ`, propagated only when the changed name is the one read).
   - Same-scope redefinitions get `#N` ids; calls bind to the last non-`@overload` one, and `lookup.find` expands a
     name to its whole family (D14).
   - Graphs in the Redis set `aftershock:lab` are omitted from listings (D13).
   - Receiver types are followed through annotations, assignments, declared or body-inferred returns, `with` blocks
     (via `__enter__`) and pytest fixtures, which are looked up in the test class, then the file, then each
-    `conftest.py` upwards (D9).
+    `conftest.py` upwards (D9). A test or fixture also gets a CALLS edge (`inferred`) to each fixture its
+    parameters name, so code used only in fixture setup reaches the tests (D17).
   - Loop variables, comprehension targets, callback parameters and subscripts take the element type of a declared
     container (`list[Foo]`, `Map<K, Foo>`, Go `[]Foo`). Python type aliases and TS/JS value aliases
     (`const x = y as T`) are followed through imports.
@@ -72,7 +76,46 @@
 - `evaluate.py` replays history to score impact (see README, *Measured accuracy*).
 - `report.py` renders markdown for the CLI, PR comments and "copy as markdown".
 
+**`aftershock/runtime/`** is runtime evidence (D15). It executes the repo's code, so it is CLI-only except for the
+gated run route (D18):
+
+- `pytest_run.py` drives pytest in the target interpreter with our plugin (`_aftershock_pytest.py`).
+  - The plugin switches the coverage.py context to each test's node id and writes one JSON line per outcome.
+  - `record_coverage` folds the covered lines onto function and method spans (`_aftershock_covread.py` runs in the
+    target env, innermost span wins, the `def` line excluded) and replaces all `COVERS` edges.
+  - `run_selected` runs the tests impact selected.
+- `impact.py` adds tests that cover a seed at hop 1, as `COVERS` edges marked `runtime`. Static test selection is
+  unchanged when nothing is recorded.
+- Re-indexing keeps `COVERS` edges; those into files whose content changed get `stale=true` and weigh
+  `COVERS_STALE` × as much until coverage is re-recorded. `eval` ignores `COVERS` (it would leak HEAD into history).
+- `mutate.py` copies the repo to a temp dir. For each sampled function it raises at entry and runs the full suite;
+  the newly failing tests are the ground truth. It scores static, coverage and same-name selection on recall,
+  caught share and tests selected.
+- `jobs.py` (D18) is the API's test run: select by mode, run with per-test events (`run_pytest` tails the plugin's
+  JSON lines while pytest runs; cancel kills the process group), rank culprits. `api.py` serves it as SSE at
+  `/repos/{r}/run/stream`, refused unless `AFTERSHOCK_ALLOW_RUN` and a loopback peer and Host.
+- The CLI commands are `aftershock coverage | run | mutate`. Benchmark repos and their test envs live in
+  `bench/repos.toml`, built by `scripts/bench_env.py`.
+
+**`aftershock/analysis/heal.py`** (D16) is the fix loop, built on the runtime layer above and `culprit.py`, not a
+fourth parallel way of running tests:
+
+- Reuses `runtime.pytest_run.run_selected` to run the already-selected tests for real, and `tools.culprits` (so
+  `--changed` refs get the same `lookup.find` resolution `run` gives them) to rank suspects on failure.
+- `--apply` sends the top suspect's whole file plus the failing output to Claude (`claude-opus-5-5`, same model Ask
+  uses), writes the proposed file back, and re-runs the same tests to check. A round is kept only if the failing set
+  strictly shrank; otherwise the file is restored from the copy read before the edit and the next suspect is tried.
+- CLI command: `aftershock heal`. Dry-run (no `--apply` or no `ANTHROPIC_API_KEY`) never calls Claude or writes.
+
+**`aftershock/testlab.py`** + **`testlab/`** (D17) test the product end to end. Each scenario edits a fixture repo
+(or swaps in a buggy twin) and is scored step by step: diff, impact, `select_tests`, a full-suite run as ground
+truth, a selected-only rerun, and `culprits`. It is CLI-only (`aftershock testlab`) and uses throwaway
+`testlab-<repo>` lab graphs. Format: `testlab/README.md`.
+
 **`aftershock/tools.py`** is the single tool surface:
+
+- `select_tests` returns impact's probable tests plus every test that statically reaches a seed (reverse reachability
+  through dependents and dispatch, `reach: true`). Probability ranks; reachability decides what runs.
 
 - The CLI, API, MCP server and Ask agent all call these functions.
 - Path allow-listing (`AFTERSHOCK_REPO_ROOTS`) and clone-host checks live here.
@@ -88,7 +131,8 @@
 - The browser never sees the API key. `app/api/v1/[...path]` proxies to `AFTERSHOCK_API_URL` and adds
   `AFTERSHOCK_API_KEY` server-side.
 - Optional basic auth (`AFTERSHOCK_WEB_PASSWORD`) is enforced in middleware.
-- Pages live under `app/r/[repo]/`: overview, impact, diff, path, culprit, explore, cypher and ask.
+- Pages live under `app/r/[repo]/`: overview, impact, diff, path, tests, culprit, explore, cypher
+  and ask. The proxy refuses `runtime` / `repos/*/run` unless Host and Origin are loopback (D18).
 
 ## Data model
 

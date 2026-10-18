@@ -26,6 +26,13 @@ export function splitId(id: string): [string, string] {
   return i < 0 ? [id, ""] : [id.slice(0, i), id.slice(i + 2)];
 }
 
+/** A test's graph id as a pytest node id: `tests/t.py::TestA.test_b` -> `tests/t.py::TestA::test_b` (mirrors the server). */
+export function pytestNode(id: string): string {
+  const [file, q] = splitId(id);
+  if (!q || q === "<module>") return file;
+  return `${file}::${symName(q).replaceAll(".", "::")}`;
+}
+
 /** A symbol's display name: drops the `#2`/`#3` that keeps same-scope redefinitions (overloads) apart in ids. */
 export const symName = (qname: string) => qname.replace(/#\d+(?=$|\.)/g, "");
 
@@ -74,4 +81,5 @@ export const HOW: Record<string, string> = {
   "name-unique": "unique name",
   jsx: "JSX element",
   new: "constructor",
+  coverage: "recorded test run",
 };

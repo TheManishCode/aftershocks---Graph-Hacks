@@ -11,6 +11,7 @@ import {
   ArrowsClockwiseIcon,
   BugIcon,
   CaretDownIcon,
+  CaretLeftIcon,
   CaretRightIcon,
   CaretUpIcon,
   ChatTextIcon,
@@ -26,17 +27,24 @@ import {
   GitDiffIcon,
   GithubLogoIcon,
   GraphIcon,
+  HouseIcon,
   InfoIcon as PInfoIcon,
   LightningIcon,
   ListIcon,
   MagnifyingGlassIcon,
+  MoonIcon,
   OctagonIcon,
   PaperPlaneTiltIcon,
+  PlayIcon,
   PlusIcon,
   ReceiptIcon,
   RobotIcon,
+  SidebarSimpleIcon,
+  SlidersHorizontalIcon,
   SparkleIcon,
   SquaresFourIcon,
+  StopIcon,
+  SunIcon,
   TerminalWindowIcon,
   TestTubeIcon,
   TrashIcon,
@@ -64,6 +72,7 @@ export const Bug = light(BugIcon, "Bug");
 export const Bento = light(SquaresFourIcon, "Bento");
 export const Check = light(CheckIcon, "Check");
 export const ChevronDown = light(CaretDownIcon, "ChevronDown");
+export const ChevronLeft = light(CaretLeftIcon, "ChevronLeft");
 export const ChevronRight = light(CaretRightIcon, "ChevronRight");
 export const ChevronUp = light(CaretUpIcon, "ChevronUp");
 export const CircleAlert = light(WarningCircleIcon, "CircleAlert");
@@ -76,10 +85,14 @@ export const FileCode = light(FileCodeIcon, "FileCode");
 export const Flow = light(FlowArrowIcon, "Flow");
 export const GitDiff = light(GitDiffIcon, "GitDiff");
 export const Github = light(GithubLogoIcon, "Github");
+export const Home = light(HouseIcon, "Home");
 export const Info = light(PInfoIcon, "Info");
 export const Loader2 = light(CircleNotchIcon, "Loader2");
+export const Play = light(PlayIcon, "Play");
+export const Stop = light(StopIcon, "Stop");
 export const Menu = light(ListIcon, "Menu");
 export const MessageSquareText = light(ChatTextIcon, "MessageSquareText");
+export const Moon = light(MoonIcon, "Moon");
 export const Network = light(GraphIcon, "Network");
 export const OctagonX = light(OctagonIcon, "OctagonX");
 export const Plus = light(PlusIcon, "Plus");
@@ -88,7 +101,10 @@ export const Receipt = light(ReceiptIcon, "Receipt");
 export const Refresh = light(ArrowsClockwiseIcon, "Refresh");
 export const Search = light(MagnifyingGlassIcon, "Search");
 export const Send = light(PaperPlaneTiltIcon, "Send");
+export const Sidebar = light(SidebarSimpleIcon, "Sidebar");
+export const Sliders = light(SlidersHorizontalIcon, "Sliders");
 export const Sparkles = light(SparkleIcon, "Sparkles");
+export const Sun = light(SunIcon, "Sun");
 export const Terminal = light(TerminalWindowIcon, "Terminal");
 export const TestTube = light(TestTubeIcon, "TestTube");
 export const Trash = light(TrashIcon, "Trash");

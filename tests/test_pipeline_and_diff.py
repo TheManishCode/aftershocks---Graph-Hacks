@@ -136,3 +136,64 @@ def test_ci_indexes_merge_base_and_gates(tmp_path, capsys):
         assert cli.main(["ci", "--path", str(root), "--base", "main", "--name", "pytest-ci", "--quiet"]) == 0
     finally:
         get_store().drop_repo("pytest-ci")
+
+
+def test_constructing_a_class_reaches_its_init(mini):
+    assert ("connect", "local", "Store.__init__") in edges(mini)
+
+
+def test_module_value_change_reaches_only_its_readers(scratch_repo):
+    name, root = scratch_repo
+    cfg = root / "shop" / "config.py"
+    cfg.write_text("TIMEOUT = 5\nRETRIES = 2\n")
+    (root / "shop" / "client.py").write_text(
+        "from shop.config import TIMEOUT, RETRIES\n\n\ndef fetch():\n    return TIMEOUT * 2\n\n\n"
+        "def retry():\n    return RETRIES\n")
+    index_repo(root, name, with_history=False)
+    cfg.write_text("TIMEOUT = 9\nRETRIES = 2\n")
+    res = T.diff_impact(name)
+    mods = [c for c in res["changes"]["symbols"] if c["kind"] == "module"]
+    assert [(c["file"], c["names"]) for c in mods] == [("shop/config.py", ["TIMEOUT"])]
+    hit = {i["name"] for i in res["impact"]["impacted"]}
+    assert "fetch" in hit and "retry" not in hit  # only the reader of the changed value
+
+
+def test_added_override_seeds_the_base_method(scratch_repo):
+    name, root = scratch_repo
+    svc = root / "shop" / "service.py"
+    svc.write_text(svc.read_text() + "\n\nclass NightJob(Job):\n    pass\n")
+    index_repo(root, name, with_history=False)
+    svc.write_text(svc.read_text().replace("class NightJob(Job):\n    pass\n",
+                                           "class NightJob(Job):\n    def run(self):\n        return 1\n"))
+    cs = diff.detect(get_store().repo(name), root).as_dict()
+    base = [c for c in cs["symbols"] if c["overridden_by"]]
+    assert [(c["qname"], c["overridden_by"]) for c in base] == [("Job.run", "shop/service.py::NightJob.run")]
+
+
+def test_reindex_keeps_coverage_and_marks_it_stale(scratch_repo):
+    name, root = scratch_repo
+    g = get_store().repo(name)
+    g.batched("link_covers", [{"src": "tests/test_db.py::test_connect", "dst": "shop/db.py::connect", "runs": 1}])
+    db = root / "shop" / "db.py"
+    db.write_text(db.read_text().replace("return Store(url)", "store = Store(url)\n    return store"))
+    index_repo(root, name, with_history=False)
+    rows = g.ro("covering_tests", {"ids": ["shop/db.py::connect"], "limit": 10})
+    assert [(r["src"], r["stale"]) for r in rows] == [("tests/test_db.py::test_connect", True)]
+
+
+def test_user_query_clamps_a_huge_limit(mini):
+    g = get_store().repo(mini)
+    cap = g.store.s.max_rows
+    rows = g.user_query("UNWIND range(1, 100000) AS x RETURN x LIMIT 99999999")
+    assert len(rows) == cap
+
+
+def test_search_finds_symbols_by_docstring_words(scratch_repo):
+    name, root = scratch_repo
+    p = root / "shop" / "db.py"
+    p.write_text(p.read_text() + '\n\ndef archive(key):\n    """Persist an invoice to durable storage."""\n    return key\n')
+    index_repo(root, name, with_history=False)
+    hits = T.search(name, "durable invoices")["symbols"]  # stemmed: invoices ~ invoice; neither word is in a name
+    assert [(h["qname"], h["match"]) for h in hits] == [("archive", "text")]
+    assert not any(h.get("match") for h in T.search(name, "connect")["symbols"])  # an identifier: names only
+    assert T.search(name, 'store") OR (x')["symbols"][0]["qname"] == "Store"  # query syntax is never passed through
