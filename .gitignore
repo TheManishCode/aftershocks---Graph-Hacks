@@ -5,7 +5,7 @@ __pycache__/
 .pytest_cache/
 .aftershock/
 .env
-repos/
+/repos/
 web/node_modules/
 web/.next/
 dist/
