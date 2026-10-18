@@ -18,3 +18,8 @@ web-rebuild/
 *.webm
 web/.env*
 !web/.env.example
+SESSION_LOG.md
+SESSION_STATE.md
+APPRAISAL.md
+.claude/
+.git-broken-bak-*

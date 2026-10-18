@@ -35,7 +35,7 @@ await ctx.addInitScript(() => {
     const w = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
     while (w.nextNode()) if (/^…\S{4}$/.test(w.currentNode.nodeValue.trim())) w.currentNode.nodeValue = "…••••";
   };
-  new MutationObserver(() => mask(document.body)).observe(document, { subtree: true, childList: true, characterData: true });
+  new MutationObserver(() => document.body && mask(document.body)).observe(document, { subtree: true, childList: true, characterData: true });
 });
 const page = await ctx.newPage();
 const errs = [];
@@ -111,7 +111,7 @@ await wait(5000);
 // 8 — run the selected tests
 await go(`/r/${REPO}/tests`, "8 · Run only what the change reaches", "Tests are selected from the graph — repo tests and the compliance library together — then run live.", 2000);
 await page.locator("button[type=submit]").filter({ hasText: /Run/ }).first().click().catch(() => {});
-await page.waitForSelector('a[href*="/culprit?run="]', { timeout: 180000 }).catch(() => {});
+await page.waitForSelector('a[href*="/culprit?run="]', { timeout: 120000 }).catch(() => {});
 await wait(3000);
 await scroll(600, 2500);
 
@@ -129,7 +129,7 @@ await wait(600);
 await page.getByLabel("Question").pressSequentially("If Money.times truncates instead of rounding, which features and tests are affected?", { delay: 18 });
 await page.getByRole("button", { name: "Ask", exact: true }).click();
 await wait(4000);
-await page.getByRole("button", { name: "Stop" }).waitFor({ state: "detached", timeout: 150000 }).catch(() => {});
+await page.getByRole("button", { name: "Stop" }).waitFor({ state: "detached", timeout: 120000 }).catch(() => {});
 await wait(2500);
 await scroll(900, 3000);
 await scroll(900, 3000);
@@ -142,8 +142,9 @@ await wait(4000);
 await go("/settings/models", "Bring your own model", "Keys stay on the server and are never sent back to the browser.", 3500);
 await go(`/r/${REPO}`, "Aftershock", "Know what breaks before you merge.", 3000);
 
+const video = process.argv[3] ?? `${OUT}/demo.webm`;
 await page.close();
-const video = await page.video().path();
+await page.video().saveAs(video);
 await ctx.close();
 await browser.close();
 console.log(JSON.stringify({ video, errors: errs }));
