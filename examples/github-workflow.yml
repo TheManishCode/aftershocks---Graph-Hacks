@@ -15,6 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the merge-base and history mining need real history
-      - uses: OWNER/aftershock@main # placeholder: the GitHub repo this action is published from
+      - uses: TheManishCode/aftershocks---Graph-Hacks@main
         with:
           fail-on: critical

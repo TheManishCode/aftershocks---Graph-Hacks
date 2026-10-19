@@ -2,6 +2,17 @@
 
 ## Unreleased (2026-10-19)
 
+### Docs: an open-source front door
+
+- **README rewritten** around the question it answers, with a banner and mark (`docs/assets/branding/`), screenshots
+  of the live demo (`docs/assets/screenshots/`), the new 97 s tour video (`media/brag.mp4`, replacing
+  `media/aftershock-demo.mp4`), a summary of the benchmarks with their misses, and the action, MCP and safety notes.
+- **Nothing was dropped:** the detailed instrument notes moved to `docs/how-it-works.md` and the full measurements
+  to `docs/benchmarks.md`, word for word. The script count there is corrected from 189 to 194.
+- **Community files:** `CONTRIBUTING.md`, `CONTRIBUTORS.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (trust model,
+  run gate, showcase exception, private reporting), issue forms (bug, wrong answer, feature) and a PR template.
+- `examples/github-workflow.yml` points at this repository instead of an `OWNER/aftershock` placeholder.
+
 ### Added: Fix with AI on showcase repos, a Runs page; fixed the repo selector (D29)
 
 - **Fix with AI for visitors.** The heal route now opens on showcase repos (the Vercel proxy no longer blocks it). A

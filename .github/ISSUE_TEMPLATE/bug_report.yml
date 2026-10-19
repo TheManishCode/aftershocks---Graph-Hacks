@@ -1,0 +1,40 @@
+name: Bug report
+description: Something crashed, hung, or did the wrong thing.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command or page, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Exact commands, or the steps in the UI. A public repo and commit we can index is ideal.
+      placeholder: |
+        aftershock index https://github.com/pallets/click
+        aftershock impact click Context.invoke --change signature --json
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The error, or the `--json` output if the answer is wrong. Remove any keys or private paths.
+      render: shell
+  - type: input
+    id: commit
+    attributes:
+      label: Aftershock commit
+      description: "`git rev-parse --short HEAD`, or \"live demo\""
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options: [CLI, Web UI, REST API, MCP, GitHub Action, Docker compose]

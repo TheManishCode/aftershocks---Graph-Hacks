@@ -121,8 +121,8 @@ scripts in the UI or CLI, or asks the Ask agent, which picks and runs them.
 - **Follow-ups:**
   - Only pytest modes are recorded as runs in the graph; other script results are not persisted.
   - `pytest_run` passes the server's environment to the repo's tests, model API keys included; scrub them.
-  - `media/aftershock-demo.mp4` still shows the old "add library" step. `scripts/demo_video.mjs` is updated but the
-    video was not re-recorded.
+  - The demo video is now `media/brag.mp4` (97 s, every instrument on the live ledger repo). The capture and
+    compose scripts that made it were not kept; `scripts/demo_video.mjs` still records the older captioned walkthrough.
 
 ## Results for visitors, installs, probes (D29, 2026-10-19)
 

@@ -1,0 +1,29 @@
+name: Wrong answer
+description: Aftershock missed a dependency, picked the wrong tests, or blamed the wrong code.
+labels: [accuracy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the most useful reports there are. If you can, turn it into a testlab scenario
+        ([testlab/README.md](https://github.com/TheManishCode/aftershocks---Graph-Hacks/blob/main/testlab/README.md))
+        and open a PR instead: a failing scenario is a bug report that can never regress.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which instrument
+      options: [Impact, Diff, Test selection, Path, Culprit, Fix with AI, Ask, Overview, Script library]
+    validations:
+      required: true
+  - type: textarea
+    id: case
+    attributes:
+      label: The case
+      description: The repo and commit, the change, what Aftershock said, and what is actually true. Point to the line that proves it.
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: "`--json` output"
+      render: json

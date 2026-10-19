@@ -1,0 +1,21 @@
+name: Feature request
+description: A question you wish Aftershock could answer, or a way it should work better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question you're trying to answer
+      description: Start from the problem ("before merging I want to know…"), not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: How you answer it now, and where that falls short.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: Optional. How you imagine it working.
