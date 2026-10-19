@@ -184,15 +184,15 @@ agent drive the whole run → culprit → fix loop on your machine.
 
 ```mermaid
 flowchart LR
-    src["source repo<br/>path or URL"] --> ingest["<b>ingest</b><br/>discover · parse (tree-sitter)<br/>resolve · git history"]
-    ingest --> graph[("<b>FalkorDB</b><br/>repo:&lt;name&gt;")]
-    graph --> analysis["<b>analysis</b><br/>impact · diff · paths<br/>culprit · heal · evaluate"]
-    analysis --> tools["tools.py"]
-    tools --> cli["CLI"]
-    tools --> api["REST API"]
-    tools --> mcp["MCP"]
-    tools --> ask["Ask agent"]
-    api --> web["web UI<br/>Next.js"]
+    SRC["source repo<br/>path or URL"] --> ING["<b>ingest</b><br/>discover · parse · resolve<br/>git history"]
+    ING --> DB[("<b>FalkorDB</b><br/>one graph per repo")]
+    DB --> ANA["<b>analysis</b><br/>impact · diff · paths<br/>culprit · heal · evaluate"]
+    ANA --> TOOLS["tools.py"]
+    TOOLS --> CLI["CLI"]
+    TOOLS --> API["REST API"]
+    TOOLS --> MCP["MCP server"]
+    TOOLS --> ASK["Ask agent"]
+    API --> WEB["web UI<br/>Next.js"]
 ```
 
 **Languages.** Python, TypeScript/TSX and JavaScript/JSX are tested on real repositories. Go, Java and Rust are parsed
