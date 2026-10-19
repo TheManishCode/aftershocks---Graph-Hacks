@@ -425,6 +425,7 @@ export default function TestsPage() {
     setNow(Date.now());
     setPhase("running");
     let ended: Phase = "done";
+    let ranId: string | undefined;
     try {
       await postStream(
         runStreamUrl(repo),
@@ -433,7 +434,10 @@ export default function TestsPage() {
           if (event === "test") buffer.current.push(data as TestRow);
           else if (event === "selected") setSelected(data as RunSelected);
           else if (event === "progress") setStage((data as { stage: string }).stage);
-          else if (event === "done") setDone(data as RunDone);
+          else if (event === "done") {
+            setDone(data as RunDone);
+            ranId = (data as RunDone).run_id ?? undefined;
+          }
           else if (event === "error") {
             ended = "error";
             setError((data as { detail: string }).detail);
@@ -455,6 +459,8 @@ export default function TestsPage() {
         setPhase(ended);
         history.reload();
         setNow(Date.now());
+        // A recorded run goes straight to its culprit view: which tests ran, how each ended, and what they reach.
+        if (ended === "done" && ranId) router.push(`/r/${encodeURIComponent(repo)}/culprit?run=${ranId}`);
       }
     }
   };

@@ -19,7 +19,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Callout,
@@ -41,10 +41,10 @@ import {
   type Step as GtStep,
 } from "@/components/gt";
 import { Bot, Bug, ChevronDown, CircleAlert, CircleCheck, Stop } from "@/components/icons";
+import { GraphCanvas, type GEdge, type GNode } from "@/components/graph-canvas";
 import { ProblemList } from "@/components/impact-view";
 import { Receipts, SymLink } from "@/components/kit";
 import { Enter } from "@/components/motion";
-import { RunList } from "@/components/run-list";
 import { SuspectRow } from "@/components/suspect-row";
 import { SymbolPicker } from "@/components/symbol-picker";
 import { Button } from "@/components/ui/button";
@@ -74,11 +74,6 @@ export default function CulpritPage() {
   ) : (
     <Page>
       <Manual repo={repo} />
-      {history.data && history.data.runs.length > 0 && (
-        <Sheet no="R · History" title="Recorded runs" className="mt-6" tone="fragment" flush>
-          <RunList repo={repo} runs={history.data.runs} />
-        </Sheet>
-      )}
     </Page>
   );
 }
@@ -190,7 +185,7 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
       </Head>
       {latest && (
         <p className="mb-4 text-[12.5px] text-ink-dim">
-          The newest failing run on {repo}.{" "}
+          The latest failing run on {repo}.{" "}
           <Link className="text-ink underline underline-offset-2" href={`/r/${encodeURIComponent(repo)}/culprit?manual=1`}>
             Rank tests you name instead
           </Link>
@@ -202,135 +197,229 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
       ) : !d ? (
         <Measuring label="Loading the run" />
       ) : (
-        <Cols kind="main-aside">
-          <Stack className="min-w-0">
-            <RunSummary repo={repo} d={d} />
+        <>
+          <RunVerdict d={d} />
+          <RunGraph repo={repo} d={d} />
+          <Cols kind="main-aside">
+            <Stack className="min-w-0">
+              <RunSummary repo={repo} d={d} />
 
-            {d.failures.length > 0 && (
-              <Sheet no="02 · Failures" title={`Failures · ${num(d.failures.length)}`} tone="library" flush>
-                <ul className="pb-2">
-                  {d.failures.map((f) => {
-                    const h = d.history?.[f.test];
-                    const isOpen = failOpen === f.nodeid;
-                    return (
-                      <li key={f.nodeid} className={cn(isOpen && "bg-deep")}>
-                        <button
-                          type="button"
-                          onClick={() => setFailOpen(isOpen ? null : f.nodeid)}
-                          className="gt-row w-full grid-cols-[14px_14px_minmax(0,1fr)_auto_auto] text-left"
-                          data-on={isOpen || undefined}
-                          aria-expanded={isOpen}
-                        >
-                          <ChevronDown className={cn("size-3.5 text-ink-faint transition-transform", !isOpen && "-rotate-90")} aria-hidden />
-                          <CircleAlert className="size-3.5 text-fail" aria-hidden />
-                          <span className="min-w-0 truncate font-mono text-[12.5px] text-ink">{f.nodeid}</span>
-                          {/* A failure in setup or teardown is a different bug from one in the test body. */}
-                          {f.when && f.when !== "call" ? <Chip>{f.when}</Chip> : <span />}
-                          {/* History separates "broken since recorded" from "fails one run in four". */}
-                          {h ? (
-                            <span className={cn("font-mono text-[10.5px]", h.failed === h.runs ? "text-fail" : h.failed ? "text-warn" : "text-ink-faint")}>
-                              {h.failed === h.runs ? "failing since recorded" : h.failed ? `flaky? ${h.failed}/${h.runs} failed` : `passed ${h.runs} earlier runs`}
-                            </span>
-                          ) : (
-                            <span className="font-mono text-[10.5px] text-ink-faint">first record</span>
-                          )}
-                        </button>
-                        {isOpen && (
-                          <div className="space-y-2 px-[clamp(14px,2vw,24px)] pt-1 pb-4">
-                            <SymLink repo={repo} id={f.test} className="text-[12px]" />
-                            <CodeBlock code={f.message || "(no message)"} maxHeight={288} wrap noCopy={!f.message} />
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </Sheet>
-            )}
-
-            {d.culprits && (
-              <Sheet
-                no="03 · Suspects"
-                title={`Likely culprits · ${num(d.culprits.suspects.length)}`}
-                action={<Mono className="min-w-0 text-[11px] whitespace-normal text-ink-faint [overflow-wrap:anywhere]">{d.culprits.method}</Mono>}
-                note="Open a suspect for its chain — the hops from a failing test to it, as the graph resolved them. That chain and the source along it are what the model is given."
-                tone="library"
-                flush
-              >
-                <div className="px-[clamp(14px,2vw,24px)] empty:hidden">
-                  <ProblemList repo={repo} problems={d.culprits.problems} />
-                </div>
-                {d.culprits.suspects.length ? (
+              {d.failures.length > 0 && (
+                <Sheet no="02 · Failures" title={`Failures · ${num(d.failures.length)}`} tone="library" flush>
                   <ul className="pb-2">
-                    {d.culprits.suspects.map((s, i) => (
-                      <SuspectRow key={s.id} repo={repo} s={s} rank={i + 1} open={open === s.id} onToggle={() => setOpen(open === s.id ? null : s.id)} />
-                    ))}
+                    {d.failures.map((f) => {
+                      const h = d.history?.[f.test];
+                      const isOpen = failOpen === f.nodeid;
+                      return (
+                        <li key={f.nodeid} className={cn(isOpen && "bg-deep")}>
+                          <button
+                            type="button"
+                            onClick={() => setFailOpen(isOpen ? null : f.nodeid)}
+                            className="gt-row w-full grid-cols-[14px_14px_minmax(0,1fr)_auto_auto] text-left"
+                            data-on={isOpen || undefined}
+                            aria-expanded={isOpen}
+                          >
+                            <ChevronDown className={cn("size-3.5 text-ink-faint transition-transform", !isOpen && "-rotate-90")} aria-hidden />
+                            <CircleAlert className="size-3.5 text-fail" aria-hidden />
+                            <span className="min-w-0 truncate font-mono text-[12.5px] text-ink">{f.nodeid}</span>
+                            {/* A failure in setup or teardown is a different bug from one in the test body. */}
+                            {f.when && f.when !== "call" ? <Chip>{f.when}</Chip> : <span />}
+                            {/* History separates "broken since recorded" from "fails one run in four". */}
+                            {h ? (
+                              <span className={cn("font-mono text-[10.5px]", h.failed === h.runs ? "text-fail" : h.failed ? "text-warn" : "text-ink-faint")}>
+                                {h.failed === h.runs ? "failing since recorded" : h.failed ? `flaky? ${h.failed}/${h.runs} failed` : `passed ${h.runs} earlier runs`}
+                              </span>
+                            ) : (
+                              <span className="font-mono text-[10.5px] text-ink-faint">first record</span>
+                            )}
+                          </button>
+                          {isOpen && (
+                            <div className="space-y-2 px-[clamp(14px,2vw,24px)] pt-1 pb-4">
+                              <SymLink repo={repo} id={f.test} className="text-[12px]" />
+                              <CodeBlock code={f.message || "(no message)"} maxHeight={288} wrap noCopy={!f.message} />
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
-                ) : (
-                  <p className="px-[clamp(14px,2vw,24px)] pb-5 text-[13px] text-ink-dim">No suspects: the failing tests reach no resolved code.</p>
-                )}
-              </Sheet>
-            )}
-
-            {d.output_tail && (
-              <Sheet no="04 · Output" title="pytest output" tone="fragment">
-                <CodeBlock code={d.output_tail} maxHeight={288} wrap />
-              </Sheet>
-            )}
-          </Stack>
-
-          <Stack className="min-w-0 lg:sticky lg:top-[calc(var(--nav)+16px)] lg:self-start">
-            <Sheet
-              no="05 · Fix loop"
-              title="Fix with AI"
-              tone="commission"
-              action={
-                healing ? (
-                  <Button size="sm" variant="outline" onClick={() => abort.current?.abort()}>
-                    <Stop className="size-3.5" aria-hidden /> Stop watching
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={heal} disabled={!canHeal}>
-                    <Bot className="size-3.5" aria-hidden /> {result ? "Try again" : "Fix with AI"}
-                  </Button>
-                )
-              }
-            >
-              {!runtime.data?.enabled ? (
-                <p className="text-[13.5px] text-ink-dim">
-                  Fixing with AI edits files on disk, so it only runs on the operator&apos;s own machine: start the API there with{" "}
-                  <code className="font-mono text-ink">AFTERSHOCK_ALLOW_RUN=1</code>. The run, its failures and the ranked culprits above are readable by anyone.
-                </p>
-              ) : !d.failed ? (
-                <p className="text-[13.5px] text-ink-dim">Nothing to fix: this run had no failing tests.</p>
-              ) : !steps.length && !error && !result ? (
-                <Stack className="gap-3">
-                  <p className="text-[13.5px] leading-relaxed text-ink-dim">
-                    Re-runs this run&apos;s {num(d.tests)} tests; if they still fail, sends the model the failure output, the top suspect&apos;s chain and source, and
-                    read-only graph tools to follow callers and history further. It states the cause and evidence with its fix. The tests run again after each edit; an
-                    edit that does not reduce failures is reverted. Up to 3 rounds.
-                  </p>
-                  {/* The only destructive thing in the product gets said plainly, before the button. */}
-                  <Callout tone="warn" title="This writes to your working tree">
-                    Edits land in the files on disk, not in a branch. Commit or stash anything you are not willing to lose first.
-                  </Callout>
-                </Stack>
-              ) : (
-                <HealTimeline repo={repo} steps={steps} live={healing} />
+                </Sheet>
               )}
-              {error && <ErrorNote error={error} className="mt-3" />}
-              {result && <Verdict repo={repo} r={result} last={last?.run_id ?? null} />}
-            </Sheet>
 
-            {history.data && (
-              <Sheet no="R · History" title="Recorded runs" tone="fragment" flush>
-                <RunList repo={repo} runs={history.data.runs} current={id} />
+              {d.culprits && (
+                <Sheet
+                  no="03 · Suspects"
+                  title={`Likely culprits · ${num(d.culprits.suspects.length)}`}
+                  action={<Mono className="min-w-0 text-[11px] whitespace-normal text-ink-faint [overflow-wrap:anywhere]">{d.culprits.method}</Mono>}
+                  note="Open a suspect for its chain — the hops from a failing test to it, as the graph resolved them. That chain and the source along it are what the model is given."
+                  tone="library"
+                  flush
+                >
+                  <div className="px-[clamp(14px,2vw,24px)] empty:hidden">
+                    <ProblemList repo={repo} problems={d.culprits.problems} />
+                  </div>
+                  {d.culprits.suspects.length ? (
+                    <ul className="pb-2">
+                      {d.culprits.suspects.map((s, i) => (
+                        <SuspectRow key={s.id} repo={repo} s={s} rank={i + 1} open={open === s.id} onToggle={() => setOpen(open === s.id ? null : s.id)} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="px-[clamp(14px,2vw,24px)] pb-5 text-[13px] text-ink-dim">No suspects: the failing tests reach no resolved code.</p>
+                  )}
+                </Sheet>
+              )}
+
+              {d.output_tail && (
+                <Sheet no="04 · Output" title="pytest output" tone="fragment">
+                  <CodeBlock code={d.output_tail} maxHeight={288} wrap />
+                </Sheet>
+              )}
+            </Stack>
+
+            <Stack className="min-w-0 lg:sticky lg:top-[calc(var(--nav)+16px)] lg:self-start">
+              <Sheet
+                no="05 · Fix loop"
+                title="Fix with AI"
+                tone="commission"
+                action={
+                  healing ? (
+                    <Button size="sm" variant="outline" onClick={() => abort.current?.abort()}>
+                      <Stop className="size-3.5" aria-hidden /> Stop watching
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={heal} disabled={!canHeal}>
+                      <Bot className="size-3.5" aria-hidden /> {result ? "Try again" : "Fix with AI"}
+                    </Button>
+                  )
+                }
+              >
+                {!runtime.data?.enabled ? (
+                  <p className="text-[13.5px] text-ink-dim">
+                    Fixing with AI edits files on disk, so it only runs on the operator&apos;s own machine: start the API there with{" "}
+                    <code className="font-mono text-ink">AFTERSHOCK_ALLOW_RUN=1</code>. The run, its failures and the ranked culprits above are readable by anyone.
+                  </p>
+                ) : !d.failed ? (
+                  <p className="text-[13.5px] text-ink-dim">Nothing to fix: this run had no failing tests.</p>
+                ) : !steps.length && !error && !result ? (
+                  <Stack className="gap-3">
+                    <p className="text-[13.5px] leading-relaxed text-ink-dim">
+                      Re-runs this run&apos;s {num(d.tests)} tests; if they still fail, sends the model the failure output, the top suspect&apos;s chain and source, and
+                      read-only graph tools to follow callers and history further. It states the cause and evidence with its fix. The tests run again after each edit; an
+                      edit that does not reduce failures is reverted. Up to 3 rounds.
+                    </p>
+                    {/* The only destructive thing in the product gets said plainly, before the button. */}
+                    <Callout tone="warn" title="This writes to your working tree">
+                      Edits land in the files on disk, not in a branch. Commit or stash anything you are not willing to lose first.
+                    </Callout>
+                  </Stack>
+                ) : (
+                  <HealTimeline repo={repo} steps={steps} live={healing} />
+                )}
+                {error && <ErrorNote error={error} className="mt-3" />}
+                {result && <Verdict repo={repo} r={result} last={last?.run_id ?? null} />}
               </Sheet>
-            )}
-          </Stack>
-        </Cols>
+
+            </Stack>
+          </Cols>
+        </>
       )}
     </Page>
+  );
+}
+
+/** One line that says what ran and how it ended, toned by the worst outcome: the first thing anyone reads. */
+function RunVerdict({ d }: { d: RunDetail }) {
+  const errors = d.failures.filter((f) => f.when && f.when !== "call").length;
+  const failed = d.failed - errors;
+  const parts = [
+    `${num(d.tests)} test${d.tests === 1 ? "" : "s"} ran (${d.mode})`,
+    failed > 0 && `${num(failed)} failed`,
+    errors > 0 && `${num(errors)} error${errors === 1 ? "" : "s"} in setup or teardown`,
+    `${num(d.passed)} passed`,
+    d.skipped > 0 && `${num(d.skipped)} skipped`,
+    d.retries.length > 0 && `${num(d.retries.length)} passed only on retry (flaky)`,
+  ].filter(Boolean);
+  const top = d.culprits?.suspects[0];
+  const tone = d.failed ? "fail" : d.retries.length || d.skipped ? "warn" : "mark";
+  const title = d.failed ? `${num(d.failed)} of ${num(d.tests)} tests failing` : d.tests ? "Every test passed" : "No tests ran";
+  return (
+    <Callout tone={tone} icon={d.failed ? <CircleAlert aria-hidden /> : <CircleCheck aria-hidden />} title={title} className="mb-[clamp(16px,2.4vw,28px)]">
+      {parts.join(" · ")}.
+      {top && (
+        <>
+          {" "}
+          Most likely culprit: <Mono className="text-ink">{top.name}</Mono> ({top.file}:{top.line}), reached by {num(top.failed)} failing and {num(top.passed)} passing
+          test{top.passed === 1 ? "" : "s"}{top.changed ? ", and changed in this diff" : ""}.
+        </>
+      )}
+    </Callout>
+  );
+}
+
+const OUT_TONE: Record<string, string> = { passed: "bg-pass", failed: "bg-fail", skipped: "bg-line-loud" };
+const SUSPECTS_SHOWN = 5;
+
+/** The run as a graph: every test that ran, coloured by outcome, wired through the call chains the culprit ranking
+ * used to the top suspects. Passing tests stand alone unless a chain runs through them. */
+function RunGraph({ repo, d }: { repo: string; d: RunDetail }) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<string>();
+  const { nodes, edges } = useMemo(() => {
+    const ns = new Map<string, GNode>();
+    const es = new Map<string, GEdge>();
+    for (const r of d.results) {
+      ns.set(r.test, { id: r.test, label: r.test.split("::").pop() ?? r.test, sub: r.test.split("::")[0], tone: OUT_TONE[r.outcome] ?? "bg-line-loud", badge: r.outcome, group: "tests" });
+    }
+    const top = d.culprits?.suspects.slice(0, SUSPECTS_SHOWN) ?? [];
+    top.forEach((s, i) => {
+      for (const st of s.path) {
+        for (const id of [st.from, st.to]) {
+          if (!ns.has(id)) ns.set(id, { id, label: id.split("::").pop() ?? id, sub: id.split("::")[0], tone: "bg-line-loud" });
+        }
+        const k = `${st.from}>${st.to}`;
+        if (!es.has(k)) es.set(k, { src: st.from, dst: st.to, dashed: st.how !== "resolved" && st.how !== undefined, label: st.type === "CALLS" ? undefined : st.type.toLowerCase() });
+      }
+      // every other failing test that reaches this suspect, drawn dashed: reached, chain not shown
+      const first = s.path[0]?.from;
+      for (const t of s.failing_tests) {
+        if (t === first || !ns.has(t)) continue;
+        const k = `${t}>${s.id}`;
+        if (!es.has(k)) es.set(k, { src: t, dst: s.id, dashed: true });
+      }
+      const max = top[0]?.score || 1;
+      ns.set(s.id, { id: s.id, label: s.name, sub: `${s.file}:${s.line}`, tone: i === 0 ? "bg-fail" : "bg-warn", value: s.score / max, badge: `#${i + 1}${s.changed ? " · changed" : ""}`, emphasis: i === 0 });
+    });
+    return { nodes: [...ns.values()], edges: [...es.values()] };
+  }, [d]);
+
+  if (!nodes.length) return null;
+  const shown = Math.min(SUSPECTS_SHOWN, d.culprits?.suspects.length ?? 0);
+  return (
+    <Sheet no="01 · Graph" title="What ran, and what it reached" tone="library" className="mb-[clamp(16px,2.4vw,28px)]" flush>
+      <GraphCanvas
+        nodes={nodes}
+        edges={edges}
+        selected={selected}
+        onSelect={(id) => (selected === id ? router.push(`/r/${encodeURIComponent(repo)}/explore?ref=${encodeURIComponent(id)}`) : setSelected(id))}
+        height={460}
+        hud={
+          <>
+            <span>Run {d.id.slice(-8)}</span>
+            <span className="text-ink-dim">
+              {num(d.results.length)} tests · {shown} suspect{shown === 1 ? "" : "s"}
+            </span>
+          </>
+        }
+      />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-[clamp(14px,2vw,24px)] py-3 font-mono text-[10px] tracking-[.1em] text-ink-dim uppercase">
+        <span className="flex items-center gap-1.5"><span className="size-2 bg-pass" aria-hidden /> passed</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 bg-fail" aria-hidden /> failed · top suspect</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 bg-warn" aria-hidden /> suspect</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 bg-line-loud" aria-hidden /> skipped · on the chain</span>
+        <span>dashed: inferred call, or reached without the chain drawn</span>
+      </div>
+    </Sheet>
   );
 }
 

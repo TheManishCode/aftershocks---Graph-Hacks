@@ -32,6 +32,10 @@ The public site refused every run, so nobody but the operator ever saw a result 
 
 - **Results on arrival:** the Tests page shows the newest recorded run (counts, failures, top 3 culprits) instead
   of "Nothing has run yet"; Culprit opens the newest failing run unless `?manual=1`.
+- **Run → culprit, directly:** a finished run on the Tests page opens its Culprit view. That view leads with a
+  verdict (tests ran, failed, setup/teardown errors, passed, skipped, flaky retries, the top culprit) and a graph of
+  every test that ran, coloured by outcome, wired through the ranking's call chains to the top 5 suspects. The
+  recorded-runs history lists are gone from Culprit.
 - **Fixed:** `testlab/repos/` fixtures were gitignored by the root `repos/` pattern (anchored to `/repos/`);
   `showcase.sh` works on a root-owned checkout; Sheet actions no longer overflow at phone width.
 
