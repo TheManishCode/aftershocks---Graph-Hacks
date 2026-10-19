@@ -88,10 +88,12 @@ def run_tests(repo: str, mode: str, emit: Emit, *, targets: list[str] | None = N
     return res
 
 
-def heal_run(repo: str, run_id: str, emit: Emit, *, max_rounds: int = 3, timeout: int = 1800) -> dict:
+def heal_run(repo: str, run_id: str, emit: Emit, *, max_rounds: int = 3, timeout: int = 1800,
+             keep: bool = True) -> dict:
     """Re-run a recorded failing run's tests and, when they still fail, let Claude fix the top suspect with the
     graph's evidence as context, re-verify, and keep only a strict improvement (analysis/heal.py). Each run it makes
-    is recorded RETRY_OF the one before, starting from `run_id`."""
+    is recorded RETRY_OF the one before, starting from `run_id`. `keep=False` (a public showcase) restores the
+    checkout afterwards; the rounds still carry each diff and verdict."""
     from ..analysis import heal
 
     g, root, libs = _checkout(repo)
@@ -100,9 +102,12 @@ def heal_run(repo: str, run_id: str, emit: Emit, *, max_rounds: int = 3, timeout
         raise T.NotFound(f"no recorded run {run_id!r}")
     if not base.get("failed"):
         raise T.ToolError("that run has no failing tests to fix")
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or heal.cli_backend()
+    api_key, model = os.environ.get("ANTHROPIC_API_KEY") or heal.cli_backend(), heal.FIX_MODEL
+    if not api_key and (picked := heal.provider_backend()):
+        api_key, model = picked
     if not api_key:
-        raise T.ToolError("neither ANTHROPIC_API_KEY nor the claude CLI is available to the server")
+        raise T.ToolError("no model is available to the server: set ANTHROPIC_API_KEY or a provider key "
+                          "(e.g. OPENROUTER_API_KEY), or install the claude CLI")
     python = python_for(root, repo)
     ids = sorted({r["test"] for r in base["results"]} | {f["test"] for f in base["failures"]})
     changed = base.get("changed") or None
@@ -117,8 +122,8 @@ def heal_run(repo: str, run_id: str, emit: Emit, *, max_rounds: int = 3, timeout
         return runs.record(g, out, mode="heal", trigger="heal", root=root, culprits=cul, changed=changed,
                            parent=info.get("parent") or run_id, extra=extra)
 
-    emit("start", {"run": run_id, "tests": len(ids), "model": heal.FIX_MODEL, "backend":
-                   "claude-cli" if api_key == heal.CLI_BACKEND else "api"})
+    backend = {heal.CLI_BACKEND: "claude-cli", heal.PROVIDER_BACKEND: "provider"}.get(api_key, "api")
+    emit("start", {"run": run_id, "tests": len(ids), "model": model, "backend": backend, "keep": keep})
     rep = heal.heal(g, root, python, ids, changed, apply=True, anthropic_api_key=api_key, max_rounds=max_rounds,
-                    timeout=timeout, libs=libs, emit=emit, recorder=recorder, measure=True)
+                    timeout=timeout, libs=libs, emit=emit, recorder=recorder, measure=True, model=model, keep=keep)
     return rep.as_dict()

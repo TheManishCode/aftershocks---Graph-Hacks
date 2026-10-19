@@ -234,3 +234,52 @@ def test_script_runs_are_recorded_and_listed(showcase):
     for _ in range(catalog.RUNS_KEEP + 2):
         catalog.run(showcase, ["py.syntax"], trigger="cli")
     assert len(catalog.history(showcase, 50)["runs"]) == catalog.RUNS_KEEP
+
+
+# ---- heal on a showcase: a provider backend, capped, the checkout restored --------------------------------------
+
+
+def test_heal_without_keep_restores_every_file_it_wrote(monkeypatch):
+    from types import SimpleNamespace
+
+    from aftershock.analysis import heal
+    from aftershock.runtime.pytest_run import Outcome
+
+    root = _repo("d29-heal", {"pkg/m.py": "def f():\n    return 1\n"}, venv=False)
+    fails = {"nodeid": "tests/test_m.py::test_f", "outcome": "failed"}
+    outcomes = iter([Outcome(1, 0.1, [fails]), Outcome(0, 0.1, [{**fails, "outcome": "passed"}])])
+    monkeypatch.setattr(heal, "run_selected", lambda *a, **k: next(outcomes))
+    monkeypatch.setattr(heal.T, "culprits", lambda *a, **k: {"suspects": [
+        {"id": "pkg/m.py::f", "name": "f", "file": "pkg/m.py", "line": 1, "end_line": 2}]})
+    monkeypatch.setattr(heal, "graph_context", lambda *a, **k: "")
+    asked = []
+    monkeypatch.setattr(heal, "_propose_fix", lambda key, model, *a: (asked.append((key, model)) or (
+        "def f():\n    return 2\n", "Cause: wrong value.")))
+    rep = heal.heal(SimpleNamespace(name="d29-heal"), root, sys.executable, ["tests/test_m.py::test_f"], None,
+                    apply=True, anthropic_api_key=heal.PROVIDER_BACKEND, model="openrouter:x/y", keep=False)
+    assert rep.verdict == "fixed" and "return 2" in rep.rounds[0].diff_preview
+    assert (root / "pkg/m.py").read_text() == "def f():\n    return 1\n" and "restored" in rep.note
+    assert asked == [(heal.PROVIDER_BACKEND, "openrouter:x/y")]
+
+
+def test_provider_backend_answers_through_openrouter(monkeypatch):
+    from aftershock import agent_openai
+    from aftershock.analysis import heal
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    picked = heal.provider_backend()
+    assert picked and picked[0] == heal.PROVIDER_BACKEND
+    sent = {}
+    monkeypatch.setattr(agent_openai, "_post", lambda p, k, body: sent.update(body) or {
+        "choices": [{"message": {"content": "Cause: x\n```python\nX = 2\n```"}}]})
+    text, err = heal._ask_provider("openrouter:anthropic/claude-sonnet-5", "fix it")
+    assert not err and "X = 2" in text and sent["messages"][0]["content"] == heal.FIX_SYSTEM
+
+
+def test_heal_is_open_on_showcase_repos_only(api):
+    c = api(False, "d29-shown")
+    url = "/api/v1/repos/{}/runs/0123abcd/heal/stream"
+    assert c.post(url.format("elsewhere"), json={}, headers=REMOTE).status_code == 403
+    r = c.post(url.format("d29-shown"), json={}, headers=REMOTE)
+    assert r.status_code != 403, r.text  # past the gate; no such repo or run here

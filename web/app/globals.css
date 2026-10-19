@@ -188,7 +188,7 @@ textarea::placeholder {
   align-items: center;
   gap: clamp(14px, 2vw, 28px);
   padding: 0 var(--gutter);
-  background: rgba(78, 80, 80, 0.82);
+  background: rgba(78, 80, 80, 0.97);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--gt-line);

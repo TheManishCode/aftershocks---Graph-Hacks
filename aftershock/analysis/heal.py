@@ -51,6 +51,7 @@ MAX_REGION_LINES = 400
 MAX_CONTEXT_HOPS = 4  # source of at most this many symbols along the chain goes into the prompt
 MAX_CONTEXT_LINES = 60  # per symbol
 CLI_BACKEND = "claude-cli"  # passed in place of an API key: propose fixes through the local `claude` CLI
+PROVIDER_BACKEND = "provider"  # passed in place of an API key: propose fixes through a configured provider (D29)
 MAX_TOOL_CALLS = 6  # graph lookups the fixer may make before it must answer
 GRAPH_TOOLS = ("search", "symbol", "explain_path", "impact", "select_tests", "culprit", "run_detail", "test_runs",
                "owners", "cypher")  # read-only; never run_tests/heal
@@ -127,6 +128,36 @@ def _extract_code_block(text: str) -> str | None:
 def cli_backend() -> str | None:
     """`CLI_BACKEND` when the Claude Code CLI is on PATH, so heal works where only a logged-in CLI exists."""
     return CLI_BACKEND if shutil.which("claude") else None
+
+
+def provider_backend() -> tuple[str, str] | None:
+    """(`PROVIDER_BACKEND`, model id) when a provider key is configured (Settings or e.g. OPENROUTER_API_KEY), so heal
+    works on a server with neither ANTHROPIC_API_KEY nor the claude CLI. The model id is `providers`' default."""
+    from .. import providers
+
+    mid = providers.default_model()
+    return (PROVIDER_BACKEND, mid) if mid and providers.resolve(mid) else None
+
+
+def _ask_provider(model_id: str, prompt: str) -> tuple[str | None, str]:
+    # one shot, no graph tools: the prompt already carries the culprit chain and the source along it
+    from .. import providers
+    from ..agent_openai import ProviderError, _post
+
+    picked = providers.resolve(model_id)
+    if picked is None:
+        return None, f"model {model_id!r} has no configured provider"
+    provider, model = picked
+    key = providers.key_for(provider.id)
+    if provider.wire == "anthropic":
+        return _ask_api(key or "", model, prompt, None, [])
+    body = {"model": model, "messages": [{"role": "system", "content": FIX_SYSTEM},
+                                         {"role": "user", "content": prompt}], provider.max_tokens_field: 8000}
+    try:
+        out = _post(provider, key, body)
+    except ProviderError as e:
+        return None, f"{provider.label} request failed: {e}"
+    return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or "", ""
 
 
 def _graph_env() -> dict[str, str]:
@@ -221,6 +252,7 @@ def _propose_fix(api_key: str, model: str, test_output: str, suspect: dict, file
     )
     used = suspect["tools"] if isinstance(suspect.get("tools"), list) else []
     text, err = (_ask_cli(model, prompt, used) if api_key == CLI_BACKEND
+                 else _ask_provider(model, prompt) if api_key == PROVIDER_BACKEND
                  else _ask_api(api_key, model, prompt, repo, used))
     if text is None:
         return None, err
@@ -288,14 +320,16 @@ def heal(g: RepoGraph, root: Path, python: str, test_ids: list[str], changed_ref
          anthropic_api_key: str | None, max_rounds: int = MAX_ROUNDS_DEFAULT, timeout: int = 1800,
          widen: Callable[[], list[str]] | None = None, *, libs: dict[str, str] | None = None,
          emit: Callable[[str, dict], None] | None = None,
-         recorder: Callable[[Outcome, dict], str | None] | None = None, measure: bool = False) -> HealReport:
+         recorder: Callable[[Outcome, dict], str | None] | None = None, measure: bool = False,
+         model: str = FIX_MODEL, keep: bool = True) -> HealReport:
     """Select->run is the caller's job (test_ids already resolved, as `aftershock run` does it); this runs them,
     and if `apply` and a key are given, tries up to `max_rounds` Claude-proposed, re-verified fixes. `widen` returns
     tests that reach the change by a longer path; they run only when the selected ones are all green.
 
     `emit(event, data)` reports progress (run, suspect, asking, round); `recorder(outcome, info)` persists each run
     (see runtime/runs.py) and returns its id, which the next run's info carries as `parent`. With `measure`, the
-    first run is under per-test coverage, so the ranking uses what each test executed (D26)."""
+    first run is under per-test coverage, so the ranking uses what each test executed (D26). `keep=False` still
+    verifies every edit but restores each file it wrote once the loop ends (a public showcase stays reproducible)."""
     rep = HealReport(repo=g.name)
     say = emit or (lambda event, data: None)
     last_run: list[str | None] = [None]
@@ -352,82 +386,91 @@ def heal(g: RepoGraph, root: Path, python: str, test_ids: list[str], changed_ref
         rep.final = rep.initial
         return rep
 
-    current_failing = set(rep.initial["failing"])
-    last_tail = rep.initial["tail"]
-    seen_files: set[str] = set()  # only added on write_rejected/claude_error/revert, never on a kept partial fix
-    for _round in range(max_rounds):
-        failing_refs = sorted({node_to_symbol(n) for n in current_failing})  # recomputed each round: a test that
-        suspects = T.culprits(g.name, failing_refs, changed_refs, limit=10)  # got fixed must stop pointing at it
-        candidates = [s for s in suspects.get("suspects", []) if s["file"] not in seen_files]
-        if not candidates:
-            rep.note = "no further (unexplored) suspects; stopping"
-            break
-        suspect = candidates[0]
-        say("suspect", {k: suspect.get(k) for k in ("id", "name", "file", "line", "score", "hops", "path")})
-        fpath = root / suspect["file"]
-        if not fpath.is_file():
-            seen_files.add(suspect["file"])
-            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
-                                        "write_rejected", False, "suspect file not found on disk"))
-            continue
-        original = fpath.read_text(encoding="utf-8", errors="replace")
-        lines = original.splitlines(keepends=True)
-        span = _region(suspect, lines) if len(original) > MAX_SUSPECT_FILE_CHARS else None
-        if len(original) > MAX_SUSPECT_FILE_CHARS and span is None:
-            seen_files.add(suspect["file"])
-            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
-                                        "write_rejected", False,
-                                        f"file too large ({len(original)} chars) to send whole, and the suspect's "
-                                        "own span is unknown or too long"))
-            continue
-        ctx = graph_context(g, root, suspect, libs)
-        say("asking", {"model": FIX_MODEL, "suspect": suspect["name"], "file": suspect["file"],
-                       "context_chars": len(ctx)})
-        used: list[dict] = []
-        suspect = {**suspect, "repo": g.name, "run_id": last_run[0], "tools": used}
-        if span:  # large file: send and replace only the suspect's definition
-            body = "".join(lines[span[0] - 1 : span[1]])
-            new_body, explanation = _propose_fix(anthropic_api_key, FIX_MODEL, last_tail,
-                                                 {**suspect, "region": list(span), "context": ctx}, body)
-            new_text = None if new_body is None else "".join(
-                [*lines[: span[0] - 1], new_body.rstrip("\n") + "\n", *lines[span[1]:]])
-        else:
-            new_text, explanation = _propose_fix(anthropic_api_key, FIX_MODEL, last_tail, {**suspect, "context": ctx},
-                                                 original)
-        why = _explanation(explanation) or None
-        suspect = {k: v for k, v in suspect.items() if k not in ("repo", "run_id", "tools")}
-        if new_text is None or new_text == original:
-            seen_files.add(suspect["file"])
-            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
-                                        "claude_error", False, explanation[:300], None, used or None))
-            continue
-        fpath.write_text(new_text, encoding="utf-8")
-        after = run(test_ids, step="verify", round=len(rep.rounds) + 1, suspect=suspect["id"],
-                    diff=_diff(original, new_text, suspect["file"]), why=why or "")
-        after_sum = _summarize(after)
-        after_failing = set(after_sum["failing"])
-        diff_preview = _diff(original, new_text, suspect["file"])
-        if not after_failing:
-            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), 0, "fixed", False,
-                                        diff_preview, why, used or None))
+    touched: dict[Path, str] = {}  # file -> its text before the first edit, for keep=False
+    try:
+        current_failing = set(rep.initial["failing"])
+        last_tail = rep.initial["tail"]
+        seen_files: set[str] = set()  # only added on write_rejected/claude_error/revert, never on a kept partial fix
+        for _round in range(max_rounds):
+            failing_refs = sorted({node_to_symbol(n) for n in current_failing})  # recomputed each round: a test that
+            suspects = T.culprits(g.name, failing_refs, changed_refs, limit=10)  # got fixed must stop pointing at it
+            candidates = [s for s in suspects.get("suspects", []) if s["file"] not in seen_files]
+            if not candidates:
+                rep.note = "no further (unexplored) suspects; stopping"
+                break
+            suspect = candidates[0]
+            say("suspect", {k: suspect.get(k) for k in ("id", "name", "file", "line", "score", "hops", "path")})
+            fpath = root / suspect["file"]
+            if not fpath.is_file():
+                seen_files.add(suspect["file"])
+                _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
+                                            "write_rejected", False, "suspect file not found on disk"))
+                continue
+            original = fpath.read_text(encoding="utf-8", errors="replace")
+            lines = original.splitlines(keepends=True)
+            span = _region(suspect, lines) if len(original) > MAX_SUSPECT_FILE_CHARS else None
+            if len(original) > MAX_SUSPECT_FILE_CHARS and span is None:
+                seen_files.add(suspect["file"])
+                _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
+                                            "write_rejected", False,
+                                            f"file too large ({len(original)} chars) to send whole, and the suspect's "
+                                            "own span is unknown or too long"))
+                continue
+            ctx = graph_context(g, root, suspect, libs)
+            say("asking", {"model": model, "suspect": suspect["name"], "file": suspect["file"],
+                           "context_chars": len(ctx)})
+            used: list[dict] = []
+            suspect = {**suspect, "repo": g.name, "run_id": last_run[0], "tools": used}
+            if span:  # large file: send and replace only the suspect's definition
+                body = "".join(lines[span[0] - 1 : span[1]])
+                new_body, explanation = _propose_fix(anthropic_api_key, model, last_tail,
+                                                     {**suspect, "region": list(span), "context": ctx}, body)
+                new_text = None if new_body is None else "".join(
+                    [*lines[: span[0] - 1], new_body.rstrip("\n") + "\n", *lines[span[1]:]])
+            else:
+                new_text, explanation = _propose_fix(anthropic_api_key, model, last_tail, {**suspect, "context": ctx},
+                                                     original)
+            why = _explanation(explanation) or None
+            suspect = {k: v for k, v in suspect.items() if k not in ("repo", "run_id", "tools")}
+            if new_text is None or new_text == original:
+                seen_files.add(suspect["file"])
+                _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(current_failing),
+                                            "claude_error", False, explanation[:300], None, used or None))
+                continue
+            touched.setdefault(fpath, original)
+            fpath.write_text(new_text, encoding="utf-8")
+            after = run(test_ids, step="verify", round=len(rep.rounds) + 1, suspect=suspect["id"],
+                        diff=_diff(original, new_text, suspect["file"]), why=why or "")
+            after_sum = _summarize(after)
+            after_failing = set(after_sum["failing"])
+            diff_preview = _diff(original, new_text, suspect["file"])
+            if not after_failing:
+                _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), 0, "fixed", False,
+                                            diff_preview, why, used or None))
+                rep.final = after_sum
+                rep.verdict = "fixed"
+                break
+            progress = bool(after_failing) and after_failing < current_failing  # strict subset only
+            if not progress:
+                fpath.write_text(original, encoding="utf-8")
+                seen_files.add(suspect["file"])
+                outcome = "worse" if len(after_failing) > len(current_failing) else "no_change"
+                _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(after_failing), outcome,
+                                            True, diff_preview, why, used or None))
+                continue
+            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(after_failing), "partial",
+                                        False, diff_preview, why, used or None))
+            current_failing = after_failing
+            last_tail = after_sum["tail"]
             rep.final = after_sum
-            rep.verdict = "fixed"
-            return rep
-        progress = bool(after_failing) and after_failing < current_failing  # strict subset only
-        if not progress:
-            fpath.write_text(original, encoding="utf-8")
-            seen_files.add(suspect["file"])
-            outcome = "worse" if len(after_failing) > len(current_failing) else "no_change"
-            _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(after_failing), outcome,
-                                        True, diff_preview, why, used or None))
-            continue
-        _push(rep, say, HealRound(suspect, suspect["file"], len(current_failing), len(after_failing), "partial",
-                                    False, diff_preview, why, used or None))
-        current_failing = after_failing
-        last_tail = after_sum["tail"]
-        rep.final = after_sum
+    finally:
+        if not keep:
+            for f, text in touched.items():
+                f.write_text(text, encoding="utf-8")
     if rep.verdict != "fixed":
         rep.verdict = "unresolved"
         rep.note = rep.note or f"gave up after {len(rep.rounds)} round(s); every edit that didn't fully pass was reverted"
         rep.final = rep.final or rep.initial
+    if touched and not keep:
+        rep.note = (rep.note + "; " if rep.note else "") + "the checkout was restored afterwards (showcase)"
     return rep

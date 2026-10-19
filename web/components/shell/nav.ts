@@ -13,7 +13,7 @@
  * palette and the overview's quick cards all read from this file, so nothing
  * else needs touching.
  */
-import { Bento, Bot, Bug, Database, Flow, Search, GitDiff, TestTube, Zap, type Icon } from "@/components/icons";
+import { Bento, Bot, Bug, Clock, Database, Flow, Search, GitDiff, TestTube, Zap, type Icon } from "@/components/icons";
 
 export interface NavItem {
   /** Relative to `/r/<repo>`. The empty string is the repo root. */
@@ -49,6 +49,7 @@ export const REPO_NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/path", label: "Path", Icon: Flow, blurb: "How does A reach B? Hop-by-hop, with resolution.", key: "p" },
       { href: "/tests", label: "Tests", Icon: TestTube, blurb: "What covers this, and what is uncovered.", key: "t" },
+      { href: "/runs", label: "Runs", Icon: Clock, blurb: "Every recorded test run; open one for its graph, culprit and fix.", key: "r" },
       { href: "/explore", label: "Explore", Icon: Search, blurb: "Walk symbols, files, callers and callees.", key: "e" },
     ],
   },

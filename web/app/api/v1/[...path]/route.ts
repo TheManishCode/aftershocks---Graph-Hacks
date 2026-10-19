@@ -37,10 +37,8 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     return Response.json({ detail: "invalid path" }, { status: 400 });
   }
   const local = fromThisMachine(req);
-  if (path[0] === "repos" && path[2] === "runs" && path[4] === "heal" && !local) {
-    // heal edits the checkout (D25): the operator's machine only, never a showcase visitor (D29)
-    return Response.json({ detail: "healing a run is only allowed from this machine" }, { status: 403 });
-  }
+  // heal (D25) passes through: the remote header below makes the API allow it on showcase repos only, capped, with
+  // the checkout restored afterwards (D29), and refuse it everywhere else
   if (path[0] === "providers" && req.method !== "GET" && !local) {
     // Writing a provider key (D27) is loopback-only for the same reason: the API's own check sees this proxy's
     // address, not the visitor's, so this is the guard that actually holds. GET is safe — it never returns a key.

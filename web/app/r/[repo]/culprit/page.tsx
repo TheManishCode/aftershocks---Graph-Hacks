@@ -105,7 +105,8 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
   const router = useRouter();
   const pathname = usePathname();
   const detail = useQuery(`run:${repo}:${id}`, () => api.runDetail(repo, id));
-  const runtime = useQuery("runtime", api.runtime);
+  const runtime = useQuery(`runtime:${repo}`, () => api.runtime(repo));
+  const pub = !!runtime.data?.public;
   const [open, setOpen] = useState<string | null>(null);
   const [failOpen, setFailOpen] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -183,14 +184,16 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
       >
         {d?.culprits?.receipts && <Receipts r={d.culprits.receipts} />}
       </Head>
-      {latest && (
-        <p className="mb-4 text-[12.5px] text-ink-dim">
-          The latest failing run on {repo}.{" "}
-          <Link className="text-ink underline underline-offset-2" href={`/r/${encodeURIComponent(repo)}/culprit?manual=1`}>
-            Rank tests you name instead
-          </Link>
-        </p>
-      )}
+      <p className="mb-4 text-[12.5px] text-ink-dim">
+        {latest ? `The latest failing run on ${repo}. ` : `Run ${id.slice(-8)} on ${repo}. `}
+        <Link className="text-ink underline underline-offset-2" href={`/r/${encodeURIComponent(repo)}/runs`}>
+          All runs
+        </Link>
+        {" · "}
+        <Link className="text-ink underline underline-offset-2" href={`/r/${encodeURIComponent(repo)}/culprit?manual=1`}>
+          Rank tests you name instead
+        </Link>
+      </p>
 
       {detail.error ? (
         <ErrorNote error={detail.error} onRetry={detail.reload} />
@@ -296,8 +299,8 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
               >
                 {!runtime.data?.enabled ? (
                   <p className="text-[13.5px] text-ink-dim">
-                    Fixing with AI edits files on disk, so it only runs on the operator&apos;s own machine: start the API there with{" "}
-                    <code className="font-mono text-ink">AFTERSHOCK_ALLOW_RUN=1</code>. The run, its failures and the ranked culprits above are readable by anyone.
+                    {runtime.data?.reason ?? "Checking whether this server can run the fix loop…"} The run, its failures and the ranked culprits above are readable by
+                    anyone.
                   </p>
                 ) : !d.failed ? (
                   <p className="text-[13.5px] text-ink-dim">Nothing to fix: this run had no failing tests.</p>
@@ -306,12 +309,19 @@ function RunView({ repo, id, history, latest = false }: { repo: string; id: stri
                     <p className="text-[13.5px] leading-relaxed text-ink-dim">
                       Re-runs this run&apos;s {num(d.tests)} tests; if they still fail, sends the model the failure output, the top suspect&apos;s chain and source, and
                       read-only graph tools to follow callers and history further. It states the cause and evidence with its fix. The tests run again after each edit; an
-                      edit that does not reduce failures is reverted. Up to 3 rounds.
+                      edit that does not reduce failures is reverted. Up to {pub ? 2 : 3} rounds.
                     </p>
-                    {/* The only destructive thing in the product gets said plainly, before the button. */}
-                    <Callout tone="warn" title="This writes to your working tree">
-                      Edits land in the files on disk, not in a branch. Commit or stash anything you are not willing to lose first.
-                    </Callout>
+                    {pub ? (
+                      <Callout tone="mark" title="A live showcase run">
+                        The model really edits this server&apos;s copy and the tests really re-run. Afterwards the files are put back, so the demo still fails for the next
+                        visitor; each round&apos;s diff and verdict stay here. One visitor at a time.
+                      </Callout>
+                    ) : (
+                      /* The only destructive thing in the product gets said plainly, before the button. */
+                      <Callout tone="warn" title="This writes to your working tree">
+                        Edits land in the files on disk, not in a branch. Commit or stash anything you are not willing to lose first.
+                      </Callout>
+                    )}
                   </Stack>
                 ) : (
                   <HealTimeline repo={repo} steps={steps} live={healing} />

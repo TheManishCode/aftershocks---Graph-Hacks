@@ -66,7 +66,8 @@ function RepoSwitcher({ className }: { className?: string }) {
       <SelectTrigger size="sm" className={cn("h-8 w-[168px] border-line-loud bg-transparent font-mono text-[11.5px]", className)} aria-label="Repository">
         <SelectValue placeholder="repository" />
       </SelectTrigger>
-      <SelectContent>
+      {/* popper, not item-aligned: aligning the selected repo over the trigger pushed the others off-screen */}
+      <SelectContent position="popper" align="start">
         {names.map((n) => (
           <SelectItem key={n} value={n} className="font-mono text-[12px]">
             {n}

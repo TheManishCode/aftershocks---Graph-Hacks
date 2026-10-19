@@ -2,6 +2,21 @@
 
 ## Unreleased (2026-10-19)
 
+### Added: Fix with AI on showcase repos, a Runs page; fixed the repo selector (D29)
+
+- **Fix with AI for visitors.** The heal route now opens on showcase repos (the Vercel proxy no longer blocks it). A
+  public heal runs at most 2 rounds under the public timeout, holds the single public slot, and restores every file it
+  wrote when the loop ends (`heal(keep=False)`), so the demo still fails for the next visitor. Each round's diff and
+  verdict are still streamed and recorded. Elsewhere heal stays operator only.
+- **Provider backend for heal.** With neither `ANTHROPIC_API_KEY` nor the claude CLI, heal proposes fixes through the
+  default configured provider (e.g. `OPENROUTER_API_KEY`), one shot without graph tools; the prompt already carries
+  the culprit chain and source.
+- **Runs page** (`/r/<repo>/runs`, key `r`): the last 50 recorded runs, filterable (all, failing, passing, fix loop);
+  each opens on the Culprit page for that run. The Culprit page links back to it.
+- **Repo selector** listed only the current repo: Radix's item-aligned mode put the selected item over the trigger and
+  pushed the others off-screen. It now opens below the trigger.
+- The nav bar is opaque enough that scrolled content no longer shows through.
+
 ### Added: test results for every visitor, installs from the page, Aftershock's own probes (D29)
 
 The public site refused every run, so nobody but the operator ever saw a result or a culprit. Now:

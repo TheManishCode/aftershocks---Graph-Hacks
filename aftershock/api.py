@@ -461,6 +461,9 @@ async def run_stream(repo: str, body: RunBody, request: Request):
         repo, body.mode, emit, targets=body.targets, rev=body.rev, cancel=cancel, timeout=timeout))
 
 
+PUBLIC_HEAL_ROUNDS = 2
+
+
 class HealBody(BaseModel):
     max_rounds: int = Field(3, ge=1, le=5)
     timeout: int = Field(1800, ge=10, le=7200)
@@ -479,12 +482,17 @@ async def heal_stream(repo: str, run_id: str, body: HealBody, request: Request):
     # rather than a 400 that tells them their id was malformed. Validating
     # input ahead of authorisation is how a gate starts answering questions
     # for people who have not passed it.
-    if why := run_refusal(request):  # no repo: heal edits the checkout, so showcase repos don't open it (D29)
+    if why := run_refusal(request, repo):
         raise HTTPException(403, why)
     if not T.RUN_ID.match(run_id):
         raise HTTPException(400, "invalid run id")
+    # a visitor on a showcase repo gets the whole loop, capped, and the checkout back as it was afterwards, so the
+    # demo still fails for the next visitor; the rounds keep each diff and verdict (D29)
+    public = _public(request, repo)
+    rounds = min(body.max_rounds, PUBLIC_HEAL_ROUNDS) if public else body.max_rounds
+    timeout = _timeout(request, repo, body.timeout)
     return _job_stream(repo, request, "heal", lambda emit, cancel: jobs.heal_run(
-        repo, run_id, emit, max_rounds=body.max_rounds, timeout=body.timeout), stop_on_leave=False, gated=False)
+        repo, run_id, emit, max_rounds=rounds, timeout=timeout, keep=not public), stop_on_leave=False)
 
 
 def _claim(repo: str, cancel: threading.Event, public: bool = False) -> tuple[int, str] | None:
